@@ -1,0 +1,2629 @@
+---
+title: "SCI1402 Projet en science des données"
+subtitle: "Analyse des données du classement *Forbes Global 2000* de 2008 à 2023"
+author: "Mélanie Hickey"
+date: "Date de remise : 26 mars 2026"
+output: 
+    html_document:
+        toc: TRUE
+        number_sections: TRUE
+        toc_depth: 4
+        toc_float: 
+            collapsed: TRUE
+        theme: spacelab
+        
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+    echo = TRUE,
+    message = FALSE,
+    warning = FALSE)
+```
+
+<br>
+
+[img1]: ./Image/graph-8898188_640.jpg
+![Image par <a href="https://pixabay.com/users/tungart7-38741244/?utm_source=link-attribution&utm_medium=referral&utm_campaign=image&utm_content=8898188">Tung Lam</a> de <a href="https://pixabay.com//?utm_source=link-attribution&utm_medium=referral&utm_campaign=image&utm_content=8898188">Pixabay</a>][img1]{width=100%}
+
+<br>
+
+## Proposition du projet
+
+Analyse des données financières par industrie et par pays des 2 000 plus grandes sociétés publiques mondiales, selon le classement *Forbes Global 2000* (Ritika01mp, 2023), sur la période de 2008 à 2023. 
+
+Ce projet vise à analyser l’évolution des performances financières des sociétés publiques à l’échelle mondiale, en mettant en évidence les tendances sectorielles et géographiques à partir des données financières disponibles.
+
+Les enjeux consistent à identifier les grandes tendances économiques mondiales, à comparer les performances financières entre industries et pays, et à concevoir des représentations graphiques illustrant l’évolution économique observée sur la période de 2008 à 2023.
+
+### Analyse du contexte
+
+Les données du classement *Forbes Global 2000* (Ritika01mp, 2023) répertorient les 2 000 plus grandes sociétés publiques mondiales sur la période de 2008 à 2023 selon leurs indicateurs financiers, soit les ventes, les profits, les actifs et la valeur marchande. 
+
+L’analyse de la répartition des sociétés par industrie et par pays permet d’examiner la concentration économique et d’identifier les pays qui dominent dans chaque industrie, afin d’observer les principales tendances économiques sur la période de seize ans.
+
+### Objectifs
+
++ Identifier les industries dominantes par pays, ainsi qu’à l’échelle mondiale, à partir du classement *Forbes Global 2000* (Ritika01mp, 2023).
++ Analyser la répartition des sociétés publiques selon les indicateurs financiers (ventes, profits, actifs et valeur marchande).
++ Comparer les performances financières des sociétés entre industries et pays.
++ Visualiser les résultats de l’analyse à l’aide de graphiques afin de faciliter l’interprétation des tendances observées sur la période de 2008 à 2023.
+
+### Hypothèses {#hypothèses}
+
+**Hypothèse 1** 
+
+Les États-Unis et la Chine regroupent une part importante des plus grandes sociétés publiques mondiales, en raison de leur produit intérieur brut (PIB) élevé (The World Bank, s.d.). 
+
+**Hypothèse 2** 
+
+Certaines industries, telles que les secteurs de la technologie et de la finance, ont connu une progression plus marquée depuis 2008 comparativement aux autres industries. 
+
+**Hypothèse 3** 
+
+Les valeurs des indicateurs financiers varient significativement selon le pays et l’industrie, suggérant l’existence de spécialisation industrielle dans certains pays.
+
+<br>
+
+## Collecte des données
+
+Les données proviennent du classement [*Forbes Global 2000*](https://www.kaggle.com/datasets/ritika01mp/forbes-global-2000-2008-2023-mil-unit) (Ritika01mp, 2023) et contiennent le nom des sociétés, le pays du siège social, l’industrie et les informations financières (ventes, profits, actifs, valeur marchande) pour les années 2008 à 2023. Les données sont importées dans R.
+
+**Chargement des packages**
+```{r chargement des packages}
+pacman::p_load(readxl, ggplot2, gganimate, rnaturalearth, rnaturalearthdata, sf, tidyverse, dplyr, viridis, plotly, scales, reactable, stringr, knitr)
+```
+
+**Chargement des données**
+```{r chargement des données}
+years <- 2008:2023  
+
+for (y in years) {
+  df_name <- paste0("data_", y)
+  assign(df_name, read_excel(paste0("Données/Forbes Global 2000 - ", y, "  unified industry.xlsx")))
+}
+
+data_list <- ls(pattern = "^data_")
+
+data_list
+```
+
+<br>
+
+## Préparation des données 
+
+### Fonctions
+
+Fonction pour ajouter la variable `Year` aux tables de données :
+
+```{r fonction ajout Year}
+ajout_annee <- function(df, year) {
+  df$Year <- year
+  return(df)
+}
+```
+
+Fonction pour afficher un échantillon de chaque table de données :
+```{r fonction affichage_par_annee}
+afficher_table <- function(df, year){
+  reactable(
+    head(df),
+    defaultColDef = colDef(minWidth = 75),
+    columns = list(
+      Rank_nr = colDef(align = "center"),
+      Sales = colDef(format = colFormat(digits = 0, separators = TRUE)),
+      Profits = colDef(format = colFormat(digits = 0, separators = TRUE)),
+      Assets = colDef(format = colFormat(digits = 0, separators = TRUE)),
+      Market_Value = colDef(format = colFormat(digits = 0, separators = TRUE)),
+      Year = colDef(align = "center")
+    ),
+    compact = TRUE,
+    resizable = TRUE,
+    wrap = FALSE
+  )
+}
+```
+
+Fonction pour calculer le nombre de lignes dans chaque table de données :
+```{r fonction nrow}
+verifier_nrow <- function(df, year, total_expected = 2000) {
+  n <- nrow(df)
+  df_nrow <- data.frame(Année = year, Nombre_observations = n)
+  
+    reactable(
+      df_nrow,
+      defaultColDef = colDef(align = "center", width = 75),
+      columns = list(
+        Nombre_observations = colDef(
+          name = "Nombre d'observations",
+          format = colFormat(separators = TRUE),
+          width = 200
+        )
+      ),
+      compact = TRUE,
+      wrap = TRUE
+    )
+}
+```
+
+Fonction pour afficher la comparaison du nombre de lignes de chaque table de données au nombre de lignes attendu :
+```{r fonction message}
+diff_nrow <- function(df, year, total_expected = 2000) {
+  n <- nrow(df)
+  diff_nrow <- total_expected - n
+  
+  message_text <- if(n < total_expected) {
+    paste(diff_nrow, if(diff_nrow == 1) "ligne manquante" else "lignes manquantes", "dans la table de données.")
+  } else if(n > total_expected) {
+    paste(-diff_nrow, if(-diff_nrow == 1) "ligne additionnelle" else "lignes additionnelles", "dans la table de données.")
+  } else {
+    "La table de données contient le nombre exact de lignes."
+  }
+  message_text
+}
+```
+
+### Données annuelles {.tabset}
+
+Insertion de la variable `Year` pour ajouter l'année à la table de données pour permettre la comparaison annuelle des données :
+
+```{r ajout Year}
+for (y in years) {
+  df_name <- paste0("data_", y)
+  df <- get(df_name) 
+  df$Year <- y 
+  assign(df_name, df) 
+}
+```
+
+Présentation des données annuelles avant le nettoyage :
+
+#### **2008** {.unnumbered}
+
+Insertion de la variable `Year` pour ajouter l'année à la table de données pour permettre la comparaison annuelle des données. 
+
+Visualisation d'un échantillon de données (montants en millions USD) pour l'année :
+
+```{r head 2008, echo=FALSE}
+afficher_table(data_2008, 2008)
+```
+
+Vérification du nombre d'observations :
+
+```{r diff 2008, results="asis", echo=FALSE}
+verifier_nrow(data_2008, 2008)
+cat("+ ", diff_nrow(data_2008, 2008), "\n")
+```
+
+#### **2009** {.unnumbered}
+
+Insertion de la variable `Year` pour ajouter l'année à la table de données pour permettre la comparaison annuelle des données. 
+
+Visualisation d'un échantillon de données (montants en millions USD) pour l'année :
+
+```{r head 2009, echo=FALSE}
+afficher_table(data_2009, 2009)
+```
+
+Vérification du nombre d'observations :
+
+```{r diff 2009, results="asis", echo=FALSE}
+verifier_nrow(data_2009, 2009)
+cat("+ ", diff_nrow(data_2009, 2009), "\n")
+```
+
+#### **2010** {.unnumbered}
+
+Insertion de la variable `Year` pour ajouter l'année à la table de données pour permettre la comparaison annuelle des données. 
+
+Visualisation d'un échantillon de données (montants en millions USD) pour l'année :
+
+```{r head 2010, echo=FALSE}
+afficher_table(data_2010, 2010)
+```
+
+Vérification du nombre d'observations :
+
+```{r diff 2010, results="asis", echo=FALSE}
+verifier_nrow(data_2010, 2010)
+cat("+ ", diff_nrow(data_2010, 2010), "\n")
+```
+
+#### **2011** {.unnumbered}
+
+Insertion de la variable `Year` pour ajouter l'année à la table de données pour permettre la comparaison annuelle des données. 
+
+Visualisation d'un échantillon de données (montants en millions USD) pour l'année :
+
+```{r head 2011, echo=FALSE}
+afficher_table(data_2011, 2011)
+```
+
+Vérification du nombre d'observations :
+
+```{r diff 2011, results="asis", echo=FALSE}
+verifier_nrow(data_2011, 2011)
+cat("+ ", diff_nrow(data_2011, 2011), "\n")
+```
+
+#### **2012** {.unnumbered}
+
+Insertion de la variable `Year` pour ajouter l'année à la table de données pour permettre la comparaison annuelle des données. 
+
+Visualisation d'un échantillon de données (montants en millions USD) pour l'année :
+
+```{r head 2012, echo=FALSE}
+afficher_table(data_2012, 2012)
+```
+
+Vérification du nombre d'observations :
+
+```{r diff 2012, results="asis", echo=FALSE}
+verifier_nrow(data_2012, 2012)
+cat("+ ", diff_nrow(data_2012, 2012), "\n")
+```
+
+#### **2013** {.unnumbered}
+
+Insertion de la variable `Year` pour ajouter l'année à la table de données pour permettre la comparaison annuelle des données. 
+
+Visualisation d'un échantillon de données (montants en millions USD) pour l'année :
+
+```{r head 2013, echo=FALSE}
+afficher_table(data_2013, 2013)
+```
+
+Vérification du nombre d'observations :
+
+```{r diff 2013, results="asis", echo=FALSE}
+verifier_nrow(data_2013, 2013)
+cat("+ ", diff_nrow(data_2013, 2013), "\n")
+```
+
+#### **2014** {.unnumbered}
+
+Insertion de la variable `Year` pour ajouter l'année à la table de données pour permettre la comparaison annuelle des données. 
+
+Visualisation d'un échantillon de données (montants en millions USD) pour l'année :
+
+```{r head 2014, echo=FALSE}
+afficher_table(data_2014, 2014)
+```
+
+Vérification du nombre d'observations :
+
+```{r diff 2014, results="asis", echo=FALSE}
+verifier_nrow(data_2014, 2014)
+cat("+ ", diff_nrow(data_2014, 2014), "\n")
+```
+
+#### **2015** {.unnumbered}
+
+Insertion de la variable `Year` pour ajouter l'année à la table de données pour permettre la comparaison annuelle des données. 
+
+Visualisation d'un échantillon de données (montants en millions USD) pour l'année :
+
+```{r head 2015, echo=FALSE}
+afficher_table(data_2015, 2015)
+```
+
+Vérification du nombre d'observations :
+
+```{r diff 2015, results="asis", echo=FALSE}
+verifier_nrow(data_2015, 2015)
+cat("+ ", diff_nrow(data_2015, 2015), "\n")
+```
+
+#### **2016** {.unnumbered}
+
+Insertion de la variable `Year` pour ajouter l'année à la table de données pour permettre la comparaison annuelle des données. 
+
+Visualisation d'un échantillon de données (montants en millions USD) pour l'année :
+
+```{r head 2016, echo=FALSE}
+afficher_table(data_2016, 2016)
+```
+
+Vérification du nombre d'observations :
+
+```{r diff 2016, results="asis", echo=FALSE}
+verifier_nrow(data_2016, 2016)
+cat("+ ", diff_nrow(data_2016, 2016), "\n")
+```
+
+#### **2017** {.unnumbered}
+
+Insertion de la variable `Year` pour ajouter l'année à la table de données pour permettre la comparaison annuelle des données. 
+
+Visualisation d'un échantillon de données (montants en millions USD) pour l'année :
+
+```{r head 2017, echo=FALSE}
+afficher_table(data_2017, 2017)
+```
+
+Vérification du nombre d'observations :
+
+```{r diff 2017, results="asis", echo=FALSE}
+verifier_nrow(data_2017, 2017)
+cat("+ ", diff_nrow(data_2017, 2017), "\n")
+```
+
+#### **2018** {.unnumbered}
+
+Insertion de la variable `Year` pour ajouter l'année à la table de données pour permettre la comparaison annuelle des données. 
+
+Visualisation d'un échantillon de données (montants en millions USD) pour l'année :
+
+```{r head 2018, echo=FALSE}
+afficher_table(data_2018, 2018)
+```
+
+Vérification du nombre d'observations :
+
+```{r diff 2018, results="asis", echo=FALSE}
+verifier_nrow(data_2018, 2018)
+cat("+ ", diff_nrow(data_2018, 2018), "\n")
+```
+
+#### **2019** {.unnumbered}
+
+Insertion de la variable `Year` pour ajouter l'année à la table de données pour permettre la comparaison annuelle des données. 
+
+Visualisation d'un échantillon de données (montants en millions USD) pour l'année :
+
+```{r head 2019, echo=FALSE}
+afficher_table(data_2019, 2019)
+```
+
+Vérification du nombre d'observations :
+
+```{r diff 2019, results="asis", echo=FALSE}
+verifier_nrow(data_2019, 2019)
+cat("+ ", diff_nrow(data_2019, 2019), "\n")
+```
+
+#### **2020** {.unnumbered}
+
+Insertion de la variable `Year` pour ajouter l'année à la table de données pour permettre la comparaison annuelle des données. 
+
+Visualisation d'un échantillon de données (montants en millions USD) pour l'année :
+
+```{r head 2020, echo=FALSE}
+afficher_table(data_2020, 2020)
+```
+
+Vérification du nombre d'observations :
+
+```{r diff 2020, results="asis", echo=FALSE}
+verifier_nrow(data_2020, 2020)
+cat("+ ", diff_nrow(data_2020, 2020), "\n")
+```
+
+#### **2021** {.unnumbered}
+
+Insertion de la variable `Year` pour ajouter l'année à la table de données pour permettre la comparaison annuelle des données. 
+
+Visualisation d'un échantillon de données (montants en millions USD) pour l'année :
+
+```{r head 2021, echo=FALSE}
+afficher_table(data_2021, 2021)
+```
+
+Vérification du nombre d'observations :
+
+```{r diff 2021, results="asis", echo=FALSE}
+verifier_nrow(data_2021, 2021)
+cat("+ ", diff_nrow(data_2021, 2021), "\n")
+```
+
+#### **2022** {.unnumbered}
+
+Insertion de la variable `Year` pour ajouter l'année à la table de données pour permettre la comparaison annuelle des données. 
+
+Visualisation d'un échantillon de données (montants en millions USD) pour l'année :
+
+```{r head 2022, echo=FALSE}
+afficher_table(data_2022, 2022)
+```
+
+Vérification du nombre d'observations :
+
+```{r diff 2022, results="asis", echo=FALSE}
+verifier_nrow(data_2022, 2022)
+cat("+ ", diff_nrow(data_2022, 2022), "\n")
+```
+
+#### **2023** {.unnumbered}
+
+Insertion de la variable `Year` pour ajouter l'année à la table de données pour permettre la comparaison annuelle des données. 
+
+Visualisation d'un échantillon de données (montants en millions USD) pour l'année :
+
+```{r head 2023, echo=FALSE}
+afficher_table(data_2023, 2023)
+```
+
+Vérification du nombre d'observations :
+
+```{r diff 2023, results="asis", echo=FALSE}
+verifier_nrow(data_2023, 2023)
+cat("+ ", diff_nrow(data_2023, 2023), "\n")
+```
+
+### Données combinées
+
+Combinaison des 16 tables de données et visualisation de la structure de la nouvelle table de données (montants en millions USD) :
+
+```{r combine df, echo=FALSE}
+data_all <- rbind(data_2008, data_2009, data_2010, data_2011, data_2012, data_2013, data_2014, data_2015, data_2016, data_2017, data_2018, data_2019, data_2020, data_2021, data_2022, data_2023)
+```
+
+Affichage de la structure de la table de données combinée :
+
+```{r structure df, echo=FALSE}
+str(data_all)
+```
+
+### Nettoyage des données
+
+#### Valeurs manquantes `NA`
+
+Vérification de la présence de valeurs manquantes `NA` et affichage des résultats :
+
+```{r NA values, echo=FALSE}
+line_NA <- data_all[apply(is.na(data_all), 1, any),]
+
+line_NA_table <- reactable(line_NA,
+                           defaultColDef = colDef(minWidth = 75,
+                                                  na = "NA"),
+                           columns = list(Rank_nr = colDef(align = "center"),
+                                          Sales = colDef(format = colFormat(digits = 0,
+                                                                            separators = TRUE)),
+                                          Profits = colDef(format = colFormat(digits = 0,
+                                                                              separators = TRUE)),
+                                          Assets = colDef(format = colFormat(digits = 0,
+                                                                             separators = TRUE)),
+                                          Market_Value = colDef(format = colFormat(digits = 0,
+                                                                                   separators = TRUE)), 
+                                          Year = colDef(align = "center")
+                                          ),
+                           sortable = TRUE,
+                           pagination = TRUE,
+                           paginationType = "jump",
+                           defaultPageSize = 10,
+                           striped = TRUE,
+                           compact = TRUE,
+                           resizable = TRUE,
+                           wrap = FALSE
+                           )
+    
+if(nrow(line_NA) == 0) "Aucune valeur manquante" else line_NA_table
+```
+
+Proportion des valeurs manquantes `NA` :
+```{r proportion valeurs NA, echo=FALSE}
+table_NA <- data_all %>%
+    group_by(Year) %>%
+    summarise(
+        Pct_NA_Sales = mean(is.na(Sales)) * 100,
+        Pct_NA_Profits = mean(is.na(Profits)) * 100,
+        Pct_NA_Assets = mean(is.na(Assets)) * 100,
+        Pct_NA_MarketValue = mean(is.na(Market_Value)) * 100
+        ) %>%
+    mutate(Year = as.character(Year))
+
+table_NA_total <- table_NA %>%
+  bind_rows(
+    data_all %>%
+      summarise(
+        Year = "Total",
+        Pct_NA_Sales = mean(is.na(Sales)) * 100,
+        Pct_NA_Profits = mean(is.na(Profits)) * 100,
+        Pct_NA_Assets = mean(is.na(Assets)) * 100,
+        Pct_NA_MarketValue = mean(is.na(Market_Value)) * 100
+      )
+  )
+
+reactable(
+    table_NA_total,
+    defaultColDef = colDef(
+        align = "center",
+        minWidth = 80
+        ),
+    columns = list(
+        Pct_NA_Sales = colDef(name = "Sales (% NA)",
+                              format = colFormat(digits = 2, suffix = "%")),
+        Pct_NA_Profits = colDef(name = "Profits (% NA)",
+                                format = colFormat(digits = 2, suffix = "%")),
+        Pct_NA_Assets = colDef(name = "Assets (% NA)",
+                               format = colFormat(digits = 2, suffix = "%")),
+        Pct_NA_MarketValue = colDef(name = "Market Value (% NA)",
+                                    format = colFormat(digits = 2, suffix = "%"))
+        ),
+    rowStyle = function(index) {
+        if (index == nrow(table_NA_total)) {
+            list(fontWeight = "bold")
+            }
+        },
+    fullWidth = FALSE,
+    defaultPageSize = 17,
+    compact = TRUE,
+    bordered = TRUE,
+    striped = TRUE,
+    sortable = FALSE
+    )
+```
+
+<u>Traitement appliqué</u> :
+
+Le pourcentage des valeurs manquantes `NA` dans les variables financières est très faible. Pour cette raison, les valeurs manquantes `NA` seront ignorées dans les calculs et graphiques en utilisant l'argument `na.rm = TRUE`.
+
+<br>
+
+#### Observations en double
+
+Vérification de la présence de doublons :
+
++ Lignes entières :
+
+
+    ```{r ligne_doublon_all, echo=FALSE}
+    lignes_doublons_all <- data_all[duplicated(data_all) | duplicated(data_all, fromLast = TRUE), ]
+    lignes_doublons_all_table <- reactable(lignes_doublons_all,
+                        defaultColDef = colDef(minWidth = 70,
+                                               na = "NA"),
+                        columns = list(
+                            Rank_nr = colDef(align = "center"),
+                            Sales = colDef(format = colFormat(digits = 0,
+                                                              separators = TRUE)),
+                            Profits = colDef(format = colFormat(digits = 0,
+                                                                separators = TRUE)),
+                            Assets = colDef(format = colFormat(digits = 0,
+                                                               separators = TRUE)),
+                            Market_Value = colDef(format = colFormat(digits = 0,
+                                                                     separators = TRUE)), 
+                            Year = colDef(align = "center")
+                            ), 
+                        sortable = TRUE,
+                        pagination = TRUE,
+                        paginationType = "jump",
+                        defaultPageSize = 10,
+                        striped = TRUE,
+                        compact = TRUE,
+                        resizable = TRUE,
+                        wrap = FALSE
+                        )
+        
+    if(nrow(lignes_doublons_all) == 0) "Aucun doublon" else lignes_doublons_all_table
+    ```
+
+
++ Nom de sociétés dans une même année : 
+
+
+    ```{r nom_doublons_all, echo=FALSE}
+    nom_doublons_all <- data_all[duplicated(data_all[c("Year","Company")]) |  duplicated(data_all[c("Year","Company")], fromLast = TRUE), ]
+        nom_doublons_all_table <- reactable(nom_doublons_all,
+                        defaultColDef = colDef(minWidth = 70,
+                                               na = "NA"),
+                        columns = list(
+                            Rank_nr = colDef(align = "center"),
+                            Sales = colDef(format = colFormat(digits = 0,
+                                                              separators = TRUE)),
+                            Profits = colDef(format = colFormat(digits = 0,
+                                                                separators = TRUE)),
+                            Assets = colDef(format = colFormat(digits = 0,
+                                                               separators = TRUE)),
+                            Market_Value = colDef(format = colFormat(digits = 0,
+                                                                     separators = TRUE)), 
+                            Year = colDef(align = "center")
+                            ), 
+                        sortable = TRUE,
+                        pagination = TRUE,
+                        paginationType = "jump",
+                        defaultPageSize = 10,
+                        striped = TRUE,
+                        compact = TRUE,
+                        resizable = TRUE,
+                        wrap = FALSE
+                        )
+        
+    if(nrow(nom_doublons_all) == 0 ) "Aucun doublon" else nom_doublons_all_table
+    ```
+
+<u>Traitement appliqué</u> :
+
++ Lignes entières : 
+    
+    Aucun traitement à appliquer puisqu'il n'y a aucune ligne entière en double.
++ Nom de sociétés dans une même année :
+    
+    Bien que le nom d'une société est présent deux fois par année, et ce pour deux années, le nom du pays et les données financières sont différentes. Nous considérons qu'il ne s'agit pas d'un réel doublon. Les lignes sont conservées telles quelles dans la table de données.
+
+<br>
+
+#### Présence de nombres dans des variables de type `caractère`
+
+Détection de nombres dans la variable `Country` et affichage des résultats :
+
+```{r erreurs all, echo=FALSE}
+erreurs_all <- grepl("[0-9]", data_all$Country) | grepl("[0-9]", data_all$Industry)
+erreurs_all_lines <- data_all[erreurs_all, ]
+
+digit_table <- reactable(erreurs_all_lines,
+                         defaultColDef = colDef(minWidth = 75,
+                                                na = "NA"),
+                         columns = list(
+                             Rank_nr = colDef(align = "center"),
+                             Sales = colDef(format = colFormat(digits = 0,
+                                                               separators = TRUE)),
+                             Profits = colDef(format = colFormat(digits = 0,
+                                                                 separators = TRUE)),
+                             Assets = colDef(format = colFormat(digits = 0,
+                                                                separators = TRUE)),
+                             Market_Value = colDef(format = colFormat(digits = 0,
+                                                                      separators = TRUE)),
+                             Year = colDef(align = "center")
+                             ),
+                         sortable = TRUE,
+                         pagination = TRUE,
+                         paginationType = "jump",
+                         defaultPageSize = 10,
+                         striped = TRUE,
+                         compact = TRUE,
+                         resizable = TRUE,
+                         wrap = FALSE
+)
+    
+if(any(erreurs_all)) digit_table else "Aucune erreur"
+```  
+
+La variable `Country` contient des nombres dans une ligne en 2021, 2022 et 2023. Ces lignes ne peuvent pas faire partie des analyses par pays, puisqu'aucun pays n'est fourni. Nous ne pouvons pas nous fier à l'intégrité de ces lignes.
+
+<u>Traitement appliqué</u> :
+
+Les lignes identifiées ci-dessus sont supprimées puisque nous ne pouvons pas être sûrs que les montants sont dans les bonnes colonnes et, ainsi, de l’intégrité de ces lignes. 
+
+Validation de la suppression des lignes :
+
+```{r data_all no errors, echo=FALSE}
+data_all <- data_all %>%
+    filter(
+        !grepl("[0-9]", Country),
+        !grepl("[0-9]", Industry)
+    )
+
+erreurs_all <- grepl("[0-9]", data_all$Country) |
+    grepl("[0-9]", data_all$Industry)
+
+if(any(erreurs_all)) data_all[erreurs_all, ] else "Aucune erreur"
+```
+
+Nous pouvons également observer le nom d'un pays dans la colonne de la variable `Industry` dans la ligne dont le ranking est 648. Puisque cette ligne est supprimée en raison de la présence de nombres dans la variable `Country`, aucun traitement supplémentaire n'est appliqué.
+
+<br>
+
+#### Noms de pays écrits différemment
+
+Certains noms de pays contiennent le nom de deux pays et certains de ces noms contiennent les noms de pays dans un ordre inversés. Également, certains de ces noms contiennent un caractère spécial différent. 
+
+Visualisation de ces noms de pays :
+
+```{r pays différence affichage avant, echo=FALSE}
+country_list_filtered <- as.data.frame(table(data_all$Country))
+colnames(country_list_filtered) <- c("Pays", "Nombre")
+country_list_filtered <- country_list_filtered %>%
+    filter(grepl("/|-", Pays)) %>%
+    arrange(Pays) %>%
+    distinct()
+
+reactable(country_list_filtered,
+          compact = TRUE)
+```
+
+<u>Traitement appliqué</u> :
+
+Il y a `r n_distinct(data_all$Country)` noms de pays. 
+
+Pour les noms de pays qui contiennent des caractères spéciaux différents, les noms de pays sont regroupés sous le même nom avec le même caractère spécial. Par exemple, les pays `Hong Kong-China` et `Hong Kong/China` sont regroupés sous `Hong Kong/China` puisque la seule différence est le caractère spécial. 
+
+Les noms de pays contenant 2 noms de pays dans un ordre inversé sont regroupés sous les mêmes deux pays, mais avec les noms de pays dans le même ordre. Par exemple, les pays `Australia/United Kingdom` et `United Kingdom/Australia` sont regroupés sous `Australia/United Kingdom` puisque la seule différence est l'ordre des pays. 
+
+Les observations contenant les deux noms de pays sont conservées dans le jeu de données, bien qu’elles ne puissent pas faire partie des analyses par pays.
+
+```{r nettoyage des noms de pays, echo=FALSE}
+data_all <- data_all %>%
+    mutate(
+        Country_clean = case_when(
+            grepl("Hong Kong-China", Country, ignore.case = TRUE) ~ "Hong Kong/China",
+            grepl("United Kingdom/Australia", Country, ignore.case = TRUE) ~ "Australia/United Kingdom",
+            grepl("United Kingdom/Netherlands", Country, ignore.case = TRUE) ~ "Netherlands/United Kingdom",
+            TRUE ~ Country
+        )
+    )
+```
+
+Vérification des regroupements de noms de pays :
+
+```{r pays différence affichage après, echo=FALSE}
+country_list_filtered_new <- as.data.frame(table(data_all$Country_clean))
+colnames(country_list_filtered_new) <- c("Pays", "Nombre")
+country_list_filtered_new <- country_list_filtered_new %>%
+    filter(grepl("/|-", Pays)) %>%
+    arrange(Pays) %>%
+    distinct()
+
+reactable(country_list_filtered_new,
+          compact = TRUE
+)
+```
+
+
+Il y a `r n_distinct(data_all$Country_clean)` noms de pays après le regroupement des noms de pays.
+
+<br>
+
+#### Noms d'industries écrits différemment
+
+Certains noms d'industries sont trop spécifiques lorsque nous les comparons à d'autres noms, tel que `Technology Hardware & Equipment` et `Technology Hardware`.
+
+Visualisation de ces noms d'industries :
+
+```{r industrie différence affichage avant, echo=FALSE}
+industrie_nettoyage <- c("Technology Hardware","Banking","Construction","Food","Semiconductors","Telecommunications Services","Chemicals","IT ","Oil & Gas")
+
+industry_list_filtered <- as.data.frame(table(data_all$Industry))
+colnames(industry_list_filtered) <- c("Industries", "Nombre")
+industry_list_filtered <- industry_list_filtered %>%
+    filter(grepl(paste(industrie_nettoyage, collapse = "|"), Industries, ignore.case = TRUE)) %>%
+    arrange(Industries) %>%
+    distinct()
+
+reactable(industry_list_filtered, 
+          compact = TRUE
+          )
+```
+
+<u>Traitement appliqué</u> :
+
+Il y a `r n_distinct(data_all$Industry)` noms d'industries. 
+
+Les noms d'industries plus spécifiques sont regroupés avec les noms d'industries plus généraux. Par exemple, `Technology Hardware & Equipment` est regroupé avec `Technology Hardware` pour former qu'une seule industrie plus générale.
+
+```{r nettoyage des noms industries, echo=FALSE}
+data_all <- data_all %>%
+    mutate(
+        Industry_clean = case_when(
+            grepl("Technology Hardware", Industry, ignore.case = TRUE) ~ "Semiconductors, Electronics, Electrical Engineering, Technology Hardware & Equipment",
+            grepl("Banking", Industry, ignore.case = TRUE) ~ "Banking and Financial Services",
+            grepl("Construction", Industry, ignore.case = TRUE) ~ "Construction, Oil & Gas Operations, Mining and Chemicals",
+            grepl("Food", Industry, ignore.case = TRUE) ~ "Food, Drink & Tobacco",
+            grepl("Semiconductors", Industry, ignore.case = TRUE) ~ "Semiconductors, Electronics, Electrical Engineering, Technology Hardware & Equipment",
+            grepl("Telecommunications Services", Industry, ignore.case = TRUE) ~ "Telecommunications Services, Cable Supplier",
+            grepl("Chemicals", Industry, ignore.case = TRUE) ~ "Construction, Oil & Gas Operations, Mining and Chemicals",
+            grepl("IT ", Industry, ignore.case = TRUE) ~ "Technology, IT Solutions & Distribution",
+            grepl("Oil & Gas", Industry, ignore.case = TRUE) ~ "Construction, Oil & Gas Operations, Mining and Chemicals",
+            TRUE ~ Industry
+        )
+    )
+```
+
+Vérification des regroupements de noms d'industries :
+
+```{r industrie différence affichage après, echo=FALSE}
+industry_list_filtered_new <- as.data.frame(table(data_all$Industry_clean))
+colnames(industry_list_filtered_new) <- c("Industries", "Nombre")
+industry_list_filtered_new <- industry_list_filtered_new %>%
+    filter(grepl(paste(industrie_nettoyage, collapse = "|"), Industries)) %>%
+    arrange(Industries) %>%
+    distinct()
+
+reactable(industry_list_filtered_new, 
+          compact = TRUE
+          )
+```
+
+Il y a `r n_distinct(data_all$Industry_clean)` noms d'industries après le regroupement des noms d'industries.
+
+### Résumé de la préparation des données
+
++ 16 tables de données combinées en une seule
++ Suppression de 3 lignes contenant des erreurs
++ `r n_distinct(data_all$Country_clean)` pays distincts
++ `r n_distinct(data_all$Industry_clean)` industries distinctes
+
+La faible proportion de valeurs manquantes `NA` et l’absence de doublons réels indiquent une bonne qualité globale des données, ce qui renforce la fiabilité des analyses à suivre. Les données sont maintenant prêtes à être utilisées pour les analyses statistiques et les visualisations.
+
+<br>
+
+## Analyse des données
+
+Nous procédons à l'analyse des données qui ont été nettoyées à l'étape précédente.
+
+### Analyse descriptive
+
+```{r total observation, echo=FALSE}
+total_obs <- nrow(data_all)
+```
+
+**Nombre total d'observations**
+
+Selon la description du projet [*Forbes Global 2000*](https://www.kaggle.com/datasets/ritika01mp/forbes-global-2000-2008-2023-mil-unit) (Ritika01mp, 2023), le projet devrait contenir 2 000 sociétés publiques par année. Le nombre d’observations varie légèrement selon les années, certaines années comptant moins de 2 000 sociétés publiques, ce qui est expliqué en partie par les lignes supprimées lors du nettoyage des données. Le nombre d'observations est stable au fil des années, ce qui assure une comparabilité entre les années.
+
+```{r nombre observations nettoyées par année, echo=FALSE}
+obs1 <- data_all %>%
+    group_by(Year) %>%
+    summarise(
+        nb_obs = n()
+    ) %>%
+    arrange(Year, .by_group = TRUE) %>%
+    slice_head(n = 8) %>%
+    ungroup()
+
+obs2 <- data_all %>%
+    group_by(Year) %>%
+    summarise(
+        nb_obs = n()
+    ) %>%
+    arrange(Year, .by_group = TRUE) %>%
+    slice_tail(n = 8) %>%
+    ungroup()
+
+obs_combiné <- data.frame(
+    Année1 = obs1$Year,
+    n_obs1 = obs1$nb_obs,
+    Année2 = obs2$Year,
+    n_obs2 = obs2$nb_obs
+)
+
+reactable(obs_combiné,
+          defaultColDef = colDef(align = "center",
+                                 width = 75),
+          columns = list(
+              Année1 = colDef(name = "Année"),
+              n_obs1 = colDef(name = "Nombre d'observations",
+                              format = colFormat(separators = TRUE),
+                              width = 200),
+              Année2 = colDef(name = "Année"),
+              n_obs2 = colDef(name = "Nombre d'observations",
+                              format = colFormat(separators = TRUE),
+                              width = 200)
+          ),
+          compact = TRUE,
+          sortable = FALSE,
+          defaultPageSize = 16
+          )
+```
+
+
+Après la préparation et le nettoyage des données, le nombre total d'observations pour la période de 2008 à 2023 est de `r format(total_obs, big.mark = " ")`, ce qui donne une base solide pour analyser les tendances globales, géographiques et sectorielles.
+
+**Nombre de pays et d'industries**
+
+Le nombre de pays et d’industries présents dans la table de données offre une diversité qui permet d’analyser les tendances globales ainsi que la répartition sectorielle et géographique des sociétés publiques.
+
+```{r pays industrie par année, echo=FALSE}
+nb <- data_all %>%
+    group_by(Year) %>%
+    summarise(
+        Nb_pays = n_distinct(Country_clean),
+        Nb_industrie = n_distinct(Industry_clean)
+    )
+
+reactable(nb,
+          defaultColDef = colDef(align = "center"),
+          columns = list(
+              Year = colDef(name = "Année"),
+              Nb_pays = colDef(name = "Nombre de pays distincts"),
+              Nb_industrie = colDef(name = "Nombre d'industries distinctes")
+              ),
+          compact = TRUE,
+          sortable = TRUE,
+          highlight = TRUE,
+          striped = TRUE,
+          defaultPageSize = 16,
+          theme = reactableTheme(
+              highlightColor = "#D7E7F5")
+)
+```
+
+Le nombre de pays varie entre `r min(nb$Nb_pays)` et `r max(nb$Nb_pays)`, ce qui montre une fluctuation de la représentation géographique au fil des années. Le nombre d'industries varie entre `r min(nb$Nb_industrie)` et `r max(nb$Nb_industrie)`, ce qui pourrait être expliqué par une classification des industries plus détaillée.
+
+**Nombre de sociétés par pays et par industrie**
+
+Le tableau ci-dessous montre les 10 pays ayant le plus de sociétés publiques en moyenne par année et les 10 industries ayant le plus de sociétés publiques en moyenne par année.
+
+```{r nb soc ind par pays, echo=FALSE}
+soc_pays_top10 <- data_all %>%
+    group_by(Country_clean, Year) %>%
+    summarise(Nb_soc_pays = n(), .groups = "drop") %>%
+    group_by(Country_clean) %>%
+    summarise(
+        Nb_moy_soc_pays = mean(Nb_soc_pays), .groups = "drop"
+        ) %>%
+    mutate(
+        pct_pays = percent(Nb_moy_soc_pays / sum(Nb_moy_soc_pays), accuracy = 0.1)
+        ) %>%
+    arrange(desc(Nb_moy_soc_pays)) %>%
+    slice_head(n = 10) %>%
+    mutate(Rang = row_number()) %>%
+    relocate(Rang, .before = 1)
+
+soc_industry_top10 <- data_all %>%
+    group_by(Industry_clean, Year) %>%
+    summarise(Nb_soc_industry = n(), .groups = "drop") %>%
+    group_by(Industry_clean) %>%
+    summarise(
+        Nb_moy_soc_industry = mean(Nb_soc_industry), .groups = "drop"
+        ) %>%
+    mutate(
+        pct_industrie = percent(Nb_moy_soc_industry / sum(Nb_moy_soc_industry), accuracy = 0.1)
+        ) %>%
+    arrange(desc(Nb_moy_soc_industry)) %>%
+    slice_head(n = 10) %>%
+    mutate(Rang = row_number()) %>%
+    relocate(Rang, .before = 1)
+
+soc_top10 <- cbind(soc_pays_top10, soc_industry_top10)
+
+reactable(soc_top10,
+          defaultColDef = colDef(align = "center", 
+                                 sortable = FALSE),
+          columns = list(
+              Rang = colDef(width = 80),
+              Country_clean = colDef(name = "Pays", 
+                                     align = "left"),
+              Nb_moy_soc_pays = colDef(name = "Nombre moyen de sociétés",
+                                   format = colFormat(separators = TRUE,
+                                                      digits = 0)),
+              pct_pays = colDef(name = "% du total"),
+              Industry_clean = colDef(name = "Industries",
+                                      align = "left"),
+              Nb_moy_soc_industry = colDef(name = "Nombre moyen de sociétés",
+                                           format = colFormat(separators = TRUE,
+                                                              digits = 0)),
+              pct_industrie = colDef(name = "% du total")
+              ),
+          compact = TRUE,
+          striped = TRUE,
+          wrap = FALSE,
+          resizable = TRUE,
+          defaultPageSize = 10
+)
+```
+
+Les États-Unis dominent largement avec une moyenne de `r formatC(soc_pays_top10$Nb_moy_soc_pays[soc_pays_top10$Country_clean == "United States"], format = "f", digits = 0)` sociétés publiques par année, soit `r soc_pays_top10$pct_pays[soc_pays_top10$Country_clean == "United States"]` des sociétés publiques, suivi du Japon et de la Chine. Ces 3 pays regroupent presque 50% des sociétés publiques, ce qui montre le poids économique de ces pays à l'échelle mondiale.
+
+Le secteur bancaire et financier est le plus représenté avec une moyenne de `r formatC(soc_industry_top10$Nb_moy_soc_industry[soc_industry_top10$Nb_moy_soc_industry == max(soc_industry_top10$Nb_moy_soc_industry)], format = "f", digits = 0)` sociétés publiques par année, représentant `r soc_industry_top10$pct_industrie[soc_industry_top10$Nb_moy_soc_industry == max(soc_industry_top10$Nb_moy_soc_industry)]` des sociétés publiques, suivi des industries liées à l’énergie, aux matériaux et à la construction. Ces industries regroupent le tiers des sociétés publiques.
+ 
+En résumé, les données présentent une structure stable dans le temps, avec une forte concentration des sociétés dans certains pays et industries.
+
+<br>
+
+### Analyse des tendances globales
+
+#### Tendances globales des variables financières {.tabset}
+
+Nous analysons maintenant les variables financières `Sales`, `Profits`, `Assets` et `Market_Value` pour la période de 2008 à 2023. Les variables sont exprimées en millions USD.
+
+##### **Variable `Sales`** {.unnumbered}
+
+```{r variable Sales, echo=FALSE}
+table_sales <- data_all %>%
+    group_by(Year) %>%
+    summarise(
+        Min = min(Sales, na.rm = TRUE),
+        Q1 = quantile(Sales, 0.25, na.rm = TRUE),
+        Médiane = median(Sales, na.rm = TRUE),
+        Moyenne = mean(Sales, na.rm = TRUE),
+        Q3 = quantile(Sales, 0.75, na.rm = TRUE),
+        Max = max(Sales, na.rm = TRUE),
+        Nb_NA = sum(is.na(Sales)),
+        Sd = sd(Sales, na.rm = TRUE),
+        Cv = Sd/Moyenne
+        )
+reactable(table_sales,
+          defaultColDef = colDef(
+             format = colFormat(digits = 0, separators = TRUE),
+             align = "right",
+             minWidth = 75
+             ),
+          columns = list(
+              Year = colDef(name = "Année",
+                            align = "center",
+                            format = colFormat(separators = FALSE)
+                            ),
+              Sd = colDef(name = "Écart-type"),
+              Cv = colDef(name = "Coefficient de variation", 
+                          format = colFormat(digits = 2),
+                          width = 100
+                          ),
+              Nb_NA = colDef(name = "Nombre de NA", 
+                             align = "center")
+              ),
+          compact = TRUE,
+          sortable = FALSE,
+          striped = TRUE,
+          highlight = TRUE,
+          theme = reactableTheme(
+              highlightColor = "#CDF2FF"
+              ),
+          defaultPageSize = 16
+)
+```
+
+Nous pouvons constater que les ventes des sociétés publiques progressent sur la période de 16 ans. En effet, la tendance générale du 1^er^ quartile, de la médiane, de la moyenne, du 3^e^ quartile et du maximum est à la hausse. La moyenne est toujours supérieure à la médiane, et comparable au 3^e^ quartile, ce qui signifie que quelques sociétés regroupent une part importante des ventes et tirent la moyenne vers le haut. 
+
+La présence de ventes négatives est attendue. Nous ne connaissons pas exactement quel poste comptable a été utilisé pour établir les ventes de ce jeu de données. Il est possible qu’on ait utilisé les ventes nettes, soit les ventes moins le coût des ventes, ce qui peut générer des montants négatifs.
+
+<br>
+
+##### **Variable `Profits`** {.unnumbered}
+
+```{r variable profits, echo=FALSE}
+table_profits <- data_all %>%
+    group_by(Year) %>%
+    summarise(
+        Min = min(Profits, na.rm = TRUE),
+        Q1 = quantile(Profits, 0.25, na.rm = TRUE),
+        Médiane = median(Profits, na.rm = TRUE),
+        Moyenne = mean(Profits, na.rm = TRUE),
+        Q3 = quantile(Profits, 0.75, na.rm = TRUE),
+        Max = max(Profits, na.rm = TRUE),
+        Nb_NA = sum(is.na(Profits)),
+        Sd = sd(Profits, na.rm = TRUE),
+        Cv = Sd/Moyenne
+        )
+reactable(table_profits,
+          defaultColDef = colDef(
+             format = colFormat(digits = 0, separators = TRUE),
+             align = "right",
+             minWidth = 75
+             ),
+          columns = list(
+              Year = colDef(name = "Année",
+                            align = "center",
+                            format = colFormat(separators = FALSE)
+                            ),
+              Sd = colDef(name = "Écart-type"),
+              Cv = colDef(name = "Coefficient de variation", 
+                          format = colFormat(digits = 2),
+                          width = 100,
+                          align = "center"
+                          ),
+              Nb_NA = colDef(name = "Nombre de NA", 
+                             align = "center")
+              ),
+          compact = TRUE,
+          sortable = FALSE,
+          striped = TRUE,
+          highlight = TRUE,
+          theme = reactableTheme(
+              highlightColor = "#CDF2FF"
+              ),
+          defaultPageSize = 16
+)
+```
+
+Nous pouvons constater que les profits des sociétés publiques progressent légèrement sur la période de 16 ans. En effet, la tendance générale du 1^er^ quartile, de la médiane, de la moyenne, du 3^e^ quartile et du maximum est à la hausse, bien qu'elle soit légère. La moyenne est toujours supérieure à la médiane, et même comparable au 3^e^ quartile, ce qui signifie que quelques sociétés regroupent une part importante des profits et tirent la moyenne vers le haut. La présence de profits négatifs est attendue.
+
+<br>
+
+##### **Variable `Assets`** {.unnumbered}
+
+```{r variable assets, echo=FALSE}
+table_assets <- data_all %>%
+    group_by(Year) %>%
+    summarise(
+        Min = min(Assets, na.rm = TRUE),
+        Q1 = quantile(Assets, 0.25, na.rm = TRUE),
+        Médiane = median(Assets, na.rm = TRUE),
+        Moyenne = mean(Assets, na.rm = TRUE),
+        Q3 = quantile(Assets, 0.75, na.rm = TRUE),
+        Max = max(Assets, na.rm = TRUE),
+        Nb_NA = sum(is.na(Assets)),
+        Sd = sd(Assets, na.rm = TRUE),
+        Cv = Sd/Moyenne
+        )
+reactable(table_assets,
+          defaultColDef = colDef(
+             format = colFormat(digits = 0, separators = TRUE),
+             align = "right",
+             minWidth = 75
+             ),
+          columns = list(
+              Year = colDef(name = "Année",
+                            align = "center",
+                            format = colFormat(separators = FALSE)
+                            ),
+              Sd = colDef(name = "Écart-type"),
+              Cv = colDef(name = "Coefficient de variation", 
+                          format = colFormat(digits = 2),
+                          width = 100,
+                          align = "center"
+                          ),
+              Nb_NA = colDef(name = "Nombre de NA", 
+                             align = "center")
+              ),
+          compact = TRUE,
+          sortable = FALSE,
+          striped = TRUE,
+          highlight = TRUE,
+          theme = reactableTheme(
+              highlightColor = "#CDF2FF"
+              ),
+          defaultPageSize = 16
+)
+```
+
+Nous pouvons constater que les actifs des sociétés publiques progressent sur la période de 16 ans. En effet, la tendance générale du 1^er^ quartile, de la médiane, de la moyenne, du 3^e^ quartile et du maximum est à la hausse. La moyenne est toujours supérieure à la médiane et au 3^e^ quartile, ce qui signifie que quelques sociétés regroupent une part importante des actifs et tirent la moyenne vers le haut. 
+
+<br>
+
+##### **Variable `Market_Value`** {.unnumbered}
+
+```{r variable market value, echo=FALSE}
+table_market_value <- data_all %>%
+    group_by(Year) %>%
+    summarise(
+        Min = min(Market_Value, na.rm = TRUE),
+        Q1 = quantile(Market_Value, 0.25, na.rm = TRUE),
+        Médiane = median(Market_Value, na.rm = TRUE),
+        Moyenne = mean(Market_Value, na.rm = TRUE),
+        Q3 = quantile(Market_Value, 0.75, na.rm = TRUE),
+        Max = max(Market_Value, na.rm = TRUE),
+        Nb_NA = sum(is.na(Market_Value)),
+        Sd = sd(Market_Value, na.rm = TRUE),
+        Cv = Sd/Moyenne
+        )
+reactable(table_market_value,
+          defaultColDef = colDef(
+             format = colFormat(digits = 0, separators = TRUE),
+             align = "right",
+             minWidth = 75
+             ),
+          columns = list(
+              Year = colDef(name = "Année",
+                            align = "center",
+                            format = colFormat(separators = FALSE)
+                            ),
+              Sd = colDef(name = "Écart-type"),
+              Cv = colDef(name = "Coefficient de variation", 
+                          format = colFormat(digits = 2),
+                          width = 100,
+                          align = "center"
+                          ),
+              Nb_NA = colDef(name = "Nombre de NA", 
+                             align = "center")
+              ),
+          compact = TRUE,
+          sortable = FALSE,
+          striped = TRUE,
+          highlight = TRUE,
+          theme = reactableTheme(
+              highlightColor = "#CDF2FF"
+              ),
+          defaultPageSize = 16
+)
+```
+
+Nous pouvons constater que la valeur marchande des sociétés publiques progressent sur la période de 16 ans. En effet, la tendance générale du 1^er^ quartile, de la médiane, de la moyenne, du 3^e^ quartile et du maximum est à la hausse. La moyenne est toujours supérieure à la médiane, et même comparable au 3^e^ quartile, ce qui signifie que quelques sociétés regroupent une part importante de la valeur marchande et tirent la moyenne vers le haut. 
+
+<br>
+
+#### Analyses
+
+L’analyse des tendances globales montre une progression marquée des ventes, des profits, des actifs et de la valeur marchande sur la période de 2008 à 2023. 
+
+*Médiane et moyenne*
+
+La moyenne est systématiquement supérieure à la médiane, tel que démontré dans les Figures 1 et 2 avec les variables financières `Sales` et `Market_Value`, démontrant que quelques sociétés publiques dominantes tirent les indicateurs financiers vers le haut. Les figures d'évolution de la médiane et de la moyenne pour les variables financières `Profits` et `Assets` peuvent être consultés à l'[Annexe A](#annexeA).
+
+Variable `Sales`
+
+**Figure 1 - Évolution de la médiane et de la moyenne des ventes entre 2008 et 2023**
+
+```{r theme, echo=FALSE}
+theme_univ <- theme_minimal(base_size = 9) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 10),
+    axis.title = element_text(face = "bold"),
+    axis.title.y = element_text(margin = margin(r = 10)),
+    axis.title.x = element_text(margin = margin(t = 10))
+  )
+```
+
+```{r figure 1, fig.height=3, out.width="100%", echo=FALSE}
+summary_sales <- data_all %>%
+  group_by(Year) %>%
+  summarise(
+      median_sales = median(Sales, na.rm = TRUE),
+      mean_sales = mean(Sales, na.rm = TRUE)
+      )
+
+p1 <- ggplot(summary_sales, aes(x = Year)) +
+    geom_line(aes(y = median_sales, color = "Médiane"), linewidth = 1.1) +
+    geom_point(aes(y = median_sales, color = "Médiane"), size = 2) +
+    geom_line(aes(y = mean_sales, color = "Moyenne"), linewidth = 1.1, linetype = "dashed") +
+    geom_point(aes(y = mean_sales, color = "Moyenne"), size = 2) +
+    scale_color_manual(
+        values = c("Médiane" = "#1F4E79",
+                   "Moyenne" = "#00C5C0")
+        ) +
+    scale_y_continuous(labels = label_number(big.mark = " ")) +
+    labs(
+        x = "Année",
+        y = "Ventes totales (en millions USD)",
+        color = ""
+        ) +
+    theme_univ +
+    theme(axis.text.y = element_text(hjust = 0),
+          axis.line.x = element_line(color = "black"),
+          axis.line.y = element_line(color = "black"))
+
+p1
+```
+
+<br>
+
+Variable `Market_Value`
+
+**Figure 2 - Évolution de la médiane et de la moyenne de la valeur marchande entre 2008 et 2023**
+
+```{r figure 2, fig.height=3, out.width="100%", echo=FALSE}
+summary_mv <- data_all %>%
+  group_by(Year) %>%
+  summarise(
+      median_mv = median(Market_Value, na.rm = TRUE),
+      mean_mv = mean(Market_Value, na.rm = TRUE)
+      )
+
+p2 <- ggplot(summary_mv, aes(x = Year)) +
+    
+  geom_line(aes(y = median_mv, color = "Médiane"), linewidth = 1.1) +
+  geom_point(aes(y = median_mv, color = "Médiane"), size = 2) +
+    
+  geom_line(aes(y = mean_mv, color = "Moyenne"), linewidth = 1.1, linetype = "dashed") +
+  geom_point(aes(y = mean_mv, color = "Moyenne"), size = 2) +
+    
+  scale_color_manual(
+        values = c("Médiane" = "#1F4E79",
+                   "Moyenne" = "#00C5C0")
+    ) +
+  scale_y_continuous(labels = label_number(big.mark = " ")) +
+  labs(
+    x = "Année",
+    y = "Valeur marchande (en millions USD)",
+    color = ""
+    ) +
+    theme_univ +
+    theme(axis.text.y = element_text(hjust = 0),
+          axis.line.x = element_line(color = "black"),
+          axis.line.y = element_line(color = "black")
+          )
+
+p2
+```
+
+<br>
+
+*Écart-type et coefficient de variation*
+
+L’écart-type et le coefficient de variation des variables financières augmentent au fil des années, ce qui indique une dispersion croissante des performances financières par rapport à la moyenne, notamment pour la valeur marchande après 2020. Combiné avec une hausse significative des valeurs maximales, ceci suggère une concentration croissante des performances financières dans un nombre restreint de sociétés publiques dominantes. 
+
+<br>
+
+En résumé, la progression des indicateurs financiers reflète la croissance économique et la performance globale des sociétés publiques sur la période de 16 ans. La concentration des performances souligne l’importance des grandes sociétés publiques dans l’évolution des marchés mondiaux.
+
+<br>
+
+### Analyse exploratoire sectorielle
+
+
+Certaines industries, telles que la technologie, la finance et l’énergie, dominent tant par le nombre de sociétés publiques que par la valeur de leurs indicateurs financiers. 
+
+**Figure 3 - Industries ayant les ventes totales les plus élevées de 2008 à 2023**
+```{r figure 3, fig.height=5, out.width="90%", echo=FALSE}
+top10_industry <- data_all %>%
+    group_by(Year, Industry_clean) %>%
+    summarise(total_sales = sum(Sales, na.rm = TRUE), .groups = "drop") %>%
+    group_by(Year) %>%
+    slice_max(total_sales, n = 10) %>%
+    arrange(Year, desc(total_sales)) %>%
+    ungroup()
+
+p3 <- ggplot(top10_industry,
+             aes(x = fct_reorder(str_wrap(Industry_clean, width = 30), total_sales),
+                 y = total_sales,
+                 fill = Industry_clean)) +
+    geom_col() +
+    coord_flip() +
+    scale_fill_viridis_d(option = "viridis") +
+    scale_y_continuous(labels = scales::label_number(big.mark = " ")) +
+    labs(
+        title = "Ventes totales en {closest_state}",
+        x = "Industrie",
+        y = "Ventes totales (en millions USD)"
+        ) +
+    theme_univ +
+    theme(axis.text.y = element_text(hjust = 0),
+          legend.position = "none")
+
+anim <- p3 +
+    transition_states(Year, transition_length = 4, state_length = 2) +
+    ease_aes("cubic-in-out")
+
+animate(anim, nframes = 200, fps = 10)
+```
+
+<br>
+
+#### Croissance par industrie
+
+Le taux de croissance a été calculé pour chaque industrie sur les variables financières `Sales`, `Profits`, `Assets` et `Market_Value` entre 2008 et 2023. Les résultats montrent que certaines industries affichent des taux de croissance nettement supérieurs aux autres industries.
+
+<br>
+
+##### Variable `Sales` {.unnumbered .tabset}
+
+###### **Croissance des ventes** {.unnumbered}
+
+**Figure 4 - Taux de croissance des ventes totales par industrie entre 2008 et 2023**
+
+```{r figure 4, fig.height = 3.5, out.width="100%", echo=FALSE}
+croissance_vente_industrie <- data_all %>%
+    group_by(Industry_clean, Year) %>%
+    summarise(Sales = sum(Sales, na.rm = TRUE), .groups = "drop") %>%
+    group_by(Industry_clean) %>%
+    filter(all(c(2008, 2023) %in% Year)) %>%
+    summarise(
+        debut = Sales[Year == 2008],
+        fin = Sales[Year == 2023],
+        croissance_pct = (fin - debut) / debut * 100
+    ) %>%
+    slice_max(order_by = croissance_pct, n = 10, with_ties = FALSE) %>%
+    arrange(desc(croissance_pct)) %>%
+    ungroup()
+
+p4 <- ggplot(croissance_vente_industrie,
+            aes(x = fct_reorder(str_wrap(Industry_clean, width = 30), croissance_pct),
+                y = croissance_pct,
+                fill = Industry_clean)) +
+    geom_col() +
+    coord_flip() +
+    scale_fill_viridis_d(option = "viridis") +
+    scale_y_continuous(labels = label_number(big.mark = " ")) +
+    labs(
+        x = "Industrie",
+        y = "Taux de croissance (%)"
+        ) +
+    theme_univ +
+    theme(
+        axis.text.y = element_text(hjust = 0),
+        legend.position = "none"
+        )
+
+p4
+```
+
+<br>
+
+###### **Évolution temporelle des ventes** {.unnumbered}
+
+**Figure 5 - Évolution des ventes totales des 10 industries de 2008 à 2023**
+
+```{r figure 5, fig.height=5, out.width="90%", echo=FALSE}
+top10_industries_ventes <- croissance_vente_industrie$Industry_clean
+
+data_plot <- data_all %>%
+  filter(Industry_clean %in% top10_industries_ventes) %>%
+  group_by(Industry_clean, Year) %>%
+  summarise(Sales = sum(Sales, na.rm = TRUE), .groups = "drop")
+
+data_plot$Industry_wrap <- str_wrap(data_plot$Industry_clean, width = 20)
+
+p5 <- plot_ly(data = data_plot,
+              x = ~Year,
+              y = ~Sales,
+              color = ~Industry_wrap,
+              colors = viridis(10, option = "viridis"),
+              type = "scatter",
+              mode = "lines+markers",
+              text = ~paste(
+                  "Industrie :", Industry_clean,
+                  "<br>Année :", Year,
+                  "<br>Ventes totales :",
+                  scales::comma(Sales, big.mark = " ")
+                  ),
+              hoverinfo = "text"
+              ) %>% 
+    layout(
+        xaxis = list(title = "<b>Année</b>", 
+                     showline = TRUE,
+                     showgrid = FALSE),
+        yaxis = list(title = "<b>Ventes totales (en millions USD)</b>",
+                     showline = TRUE,
+                     showgrid = FALSE),
+        legend = list(title = list(text = "<b>Industries</b>")),
+        width = 900,
+        height = 500
+        ) 
+
+p5
+```
+
+<br>
+
+##### Variable `Market_Value` {.unnumbered .tabset}
+
+###### **Croissance de la valeur marchande** {.unnumbered}
+
+**Figure 6 - Taux de croissance de la valeur marchande par industrie entre 2008 et 2023**
+
+```{r figure 6, fig.height = 3.5, out.width="100%", echo=FALSE}
+croissance_valeur_marchande_industrie <- data_all %>%
+    group_by(Industry_clean, Year) %>%
+    summarise(Market_Value = sum(Market_Value, na.rm = TRUE), .groups = "drop") %>%
+    group_by(Industry_clean) %>%
+    filter(all(c(2008,2023) %in% Year)) %>%
+    summarise(
+        debut = Market_Value[Year == 2008],
+        fin = Market_Value[Year == 2023],
+        croissance_pct = (fin - debut) / debut * 100
+    ) %>%
+    slice_max(order_by = croissance_pct, n = 10, with_ties = FALSE) %>%
+    arrange(desc(croissance_pct)) %>%
+    ungroup()
+
+p6 <- ggplot(croissance_valeur_marchande_industrie,
+            aes(x = fct_reorder(str_wrap(Industry_clean, width = 30), croissance_pct),
+                y = croissance_pct,
+                fill = Industry_clean)) +
+    geom_col() +
+    coord_flip() +
+    scale_fill_viridis_d(option = "viridis") +
+    scale_y_continuous(labels = scales::label_number(big.mark = " ")) +
+    labs(
+        x = "Industrie",
+        y = "Taux de croissance (%)"
+        ) +
+    theme_univ +
+    theme(axis.text.y = element_text(hjust = 0),
+          legend.position = "none")
+
+p6
+```
+
+###### **Évolution temporelle de la valeur marchande** {.unnumbered}
+
+**Figure 7 - Évolution de la valeur marchande des 10 industries de 2008 à 2023**
+
+```{r figure 7, fig.height=5, out.width="90%", echo=FALSE}
+croissance_v_marchande_industrie <- data_all %>%
+    group_by(Industry_clean, Year) %>%
+    summarise(V_marchande = sum(Market_Value, na.rm = TRUE), .groups = "drop") %>%
+    group_by(Industry_clean) %>%
+    summarise(
+        debut = V_marchande[Year == min(Year)],
+        fin = V_marchande[Year == max(Year)],
+        croissance_pct = (fin - debut) / debut * 100
+    ) %>%
+    slice_max(order_by = croissance_pct, n = 10, with_ties = FALSE) %>%
+    arrange(desc(croissance_pct)) %>%
+    ungroup()
+
+top10_industries_V_marchande <- croissance_v_marchande_industrie$Industry_clean
+
+data_plot <- data_all %>%
+  filter(Industry_clean %in% top10_industries_V_marchande) %>%
+  group_by(Industry_clean, Year) %>%
+  summarise(V_marchande = sum(Market_Value, na.rm = TRUE), .groups = "drop")
+
+data_plot$Industry_wrap <- str_wrap(data_plot$Industry_clean, width = 20)
+
+p7 <- plot_ly(data = data_plot,
+              x = ~Year,
+              y = ~V_marchande,
+              color = ~Industry_wrap,
+              colors = viridis(10, option = "viridis"),
+              type = "scatter",
+              mode = "lines+markers",
+              text = ~paste(
+                  "Industrie :", Industry_clean,
+                  "<br>Année :", Year,
+                  "<br>Valeur marchande :",
+                  scales::comma(V_marchande, big.mark = " ")
+                  ),
+              hoverinfo = "text"
+              ) %>% 
+    layout(
+        xaxis = list(title = "<b>Année</b>",
+                     showgrid = FALSE,
+                     showline = TRUE
+                     ),
+        yaxis = list(title = "<b>Valeur marchande (en millions USD)</b>",
+                     showgrid = FALSE,
+                     showline = TRUE
+                     ),
+        legend = list(title = list(text = "<b>Industries</b>")),
+        width = 900,
+        height = 500
+        ) 
+
+p7
+```
+
+<br>
+
+#####  {.unnumbered}
+
+L’industrie technologique montre une forte croissance au niveau des ventes et de la valeur marchande. L'industrie des services aux entreprises montre une forte croissance entre 2008 et 2023 au niveau des profits et des actifs.
+
+Les graphiques des variables financières `Profits` et `Assets` peuvent être consultés à l'[Annexe B](#annexeB). 
+
+<br>
+
+### Analyse exploratoire géographique
+
+L’analyse des sociétés publiques par pays montre une forte concentration des sociétés publiques dans un nombre limité de pays. Les États-Unis et la Chine regroupent la plus grande proportion des sociétés publiques, ce qui reflète leur poids économique mondial. L’évolution temporelle de la variable financière `Sales` suggère une dominance persistante des États-Unis et une montée progressive de la Chine dans le classement à partir de l’année 2018. Les évolutions temporelles des autres variables financières `Profits`, `Assets` et `Market_Value` peuvent être consultées à l'[Annexe C](#annexeC).
+
+**Figure 8 - Pays ayant les ventes totales les plus élevées de 2008 à 2023**
+
+```{r figure 8, fig.height=3, out.width="100%", echo=FALSE}
+top10_ctry <- data_all %>%
+    group_by(Year, Country_clean) %>%
+    summarise(total_sales = sum(Sales, na.rm = TRUE), .groups = "drop") %>%
+    group_by(Year) %>%
+    slice_max(total_sales, n = 10) %>%
+    arrange(Year, desc(total_sales)) %>%
+    ungroup()
+
+p8 <- ggplot(top10_ctry,
+             aes(x = fct_reorder(Country_clean, total_sales),
+                 y = total_sales,
+                 fill = Country_clean)) +
+    geom_col() +
+    coord_flip() +
+    scale_fill_viridis_d(option = "viridis") +
+    scale_y_continuous(labels = scales::label_number(big.mark = " ")) +
+    labs(
+        title = "Ventes totales en {closest_state}",
+        x = "Pays",
+        y = "Ventes totales (en millions USD)"
+        ) +
+    theme_univ +
+    theme(axis.text.y = element_text(hjust = 0),
+          legend.position = "none")
+
+anim <- p8 +
+    transition_states(Year, transition_length = 4, state_length = 2) +
+    ease_aes("cubic-in-out")
+
+animate(anim, nframes = 200, fps = 10)
+```
+
+Les États-Unis dominent tous les indicateurs financiers, tandis que la Chine progresse particulièrement au niveau des actifs et de la valeur marchande.
+
+#### Croissance par pays
+
+Le taux de croissance a été calculé pour chaque pays sur les variables financières `Sales`, `Profits`, `Assets` et `Market_Value` entre 2008 et 2023. 
+
+<br>
+
+##### Variable `Sales`  {.unnumbered .tabset}
+
+###### **Croissance des ventes** {.unnumbered}
+
+**Figure 9 - Taux de croissance des ventes par pays entre 2008 et 2023**
+
+```{r figure 9, fig.height = 3.5, out.width="100%", echo=FALSE}
+croissance_sales_pays <- data_all %>%
+    group_by(Country_clean, Year) %>%
+    summarise(Sales = sum(Sales, na.rm = TRUE), .groups = "drop") %>%
+    group_by(Country_clean) %>%
+    filter(all(c(2008, 2023) %in% Year)) %>%
+    summarise(
+        debut = Sales[Year == 2008],
+        fin = Sales[Year == 2023],
+        croissance_pct = (fin - debut) / debut * 100
+    ) %>%
+    slice_max(order_by = croissance_pct, n = 10, with_ties = FALSE) %>%
+    arrange(desc(croissance_pct)) %>%
+    ungroup()
+
+p9 <- ggplot(croissance_sales_pays,
+            aes(x = fct_reorder(Country_clean, croissance_pct),
+                y = croissance_pct,
+                fill = Country_clean)) +
+    geom_col() +
+    coord_flip() +
+    scale_fill_viridis_d(option = "viridis") +
+    scale_y_continuous(labels = scales::label_number(big.mark = " ")) +
+    labs(
+        x = "Pays",
+        y = "Taux de croissance (%)"
+    ) +
+    theme_univ +
+    theme(axis.text.y = element_text(hjust = 0),
+          legend.position = "none")
+
+p9
+```
+
+Les résultats montrent une progression plus marquée des économies émergentes, telles que l'Arabie Saoudite, la Chine et la Colombie, au niveau des ventes.
+
+###### **Évolution temporelle des ventes** {.unnumbered}
+
+**Figure 10 - Évolution des ventes totales des 10 pays de 2008 à 2023**
+
+```{r figure 10, fig.height=4, out.width="90%", echo=FALSE}
+top10_pays_sales <- croissance_sales_pays$Country_clean
+
+data_plot <- data_all %>%
+  filter(Country_clean %in% top10_pays_sales) %>%
+  group_by(Country_clean, Year) %>%
+  summarise(Sales = sum(Sales, na.rm = TRUE), .groups = "drop")
+
+p10 <- plot_ly(data = data_plot,
+               x = ~Year,
+               y = ~Sales,
+               color = ~Country_clean,
+               colors = viridis(10, option = "viridis"),
+               type = "scatter",
+               mode = "lines+markers",
+               text = ~paste(
+                   "Pays :", Country_clean,
+                   "<br>Année :", Year,
+                   "<br>Ventes totales :",
+                   scales::comma(Sales, big.mark = " ")
+                   ),
+               hoverinfo = "text"
+               ) %>% 
+    layout(
+        xaxis = list(title = "<b>Année</b>",
+                     showgrid = FALSE,
+                     showline = TRUE),
+        yaxis = list(title = "<b>Ventes totales (en millions USD)</b>",
+                     showgrid = FALSE,
+                     showline = TRUE),
+        legend = list(title = list(text = "<b>Pays</b>")),
+        width = 900,
+        height = 400
+        ) 
+
+p10
+```
+
+<br>
+
+##### Variable `Market_Value` {.tabset .unnumbered}
+
+###### **Croissance de la valeur marchande** {.unnumbered}
+
+**Figure 11 - Taux de croissance de la valeur marchande par pays entre 2008 et 2023**
+
+```{r figure 11, fig.height = 3.5, out.width="100%", echo=FALSE}
+croissance_mValue_pays <- data_all %>%
+    group_by(Country_clean, Year) %>%
+    summarise(mValue = sum(Market_Value, na.rm = TRUE), .groups = "drop") %>%
+    group_by(Country_clean) %>%
+    filter(all(c(2008, 2023) %in% Year)) %>%
+    summarise(
+        debut = mValue[Year == 2008],
+        fin = mValue[Year == 2023],
+        croissance_pct = (fin - debut) / debut * 100
+    ) %>%
+    slice_max(order_by = croissance_pct, n = 10, with_ties = FALSE) %>%
+    arrange(desc(croissance_pct)) %>%
+    ungroup()
+
+p11 <- ggplot(croissance_mValue_pays,
+              aes(x = fct_reorder(Country_clean, croissance_pct),
+                  y = croissance_pct,
+                  fill = Country_clean)) +
+    geom_col() +
+    coord_flip() +
+    scale_fill_viridis_d(option = "viridis") +
+    scale_y_continuous(labels = scales::label_number(big.mark = " ")) +
+    labs(
+        x = "Pays",
+        y = "Taux de croissance (%)"
+        ) +
+    theme_univ +
+    theme(axis.text.y = element_text(hjust = 0),
+          legend.position = "none")
+
+p11
+```
+
+###### **Évolution temporelle de la valeur marchande** {.unnumbered}
+
+**Figure 12 - Évolution de la valeur marchande des 10 pays de 2008 à 2023**
+
+```{r figure 12, fig.height=4, out.width="90%", echo=FALSE}
+top10_pays_mValue <- croissance_mValue_pays$Country_clean
+
+data_plot <- data_all %>%
+  filter(Country_clean %in% top10_pays_mValue) %>%
+  group_by(Country_clean, Year) %>%
+  summarise(mValue = sum(Market_Value, na.rm = TRUE), .groups = "drop")
+
+p12 <- plot_ly(data = data_plot,
+               x = ~Year,
+               y = ~mValue,
+               color = ~Country_clean,
+               colors = viridis(10, option = "viridis"),
+               type = "scatter",
+               mode = "lines+markers",
+               text = ~paste(
+                   "Pays :", Country_clean,
+                   "<br>Année :", Year,
+                   "<br>Valeur marchande :",
+                   scales::comma(mValue, big.mark = " ")
+                   ),
+               hoverinfo = "text"
+               ) %>% 
+    layout(
+        xaxis = list(title = "<b>Année</b>",
+                     showgrid = FALSE,
+                     showline = TRUE),
+        yaxis = list(title = "<b>Valeur marchande (en millions USD)</b>",
+                     showgrid = FALSE,
+                     showline = TRUE),
+        legend = list(title = list(text = "<b>Pays</b>")),
+        width = 900,
+        height = 400
+        ) 
+p12
+```
+
+<br>
+
+##### {.unnumbered}
+
+Les résultats montrent une forte augmentation de la valeur marchande des sociétés en Irlande, en Arabie Saoudite et aux Émirats arabes unis.
+
+Les graphiques des variables financières `Profits` et `Assets` peuvent être consultés à l’[Annexe D](#annexeD).
+
+<br>
+
+### Analyse croisée Pays x Industrie {#analyse_croisée}
+
+L’analyse croisée Pays x Industrie vise à mettre en évidence la spécialisation sectorielle des pays en examinant la répartition des sociétés et de leurs performances financières par industrie
+
+Pour illustrer ces tendances, des graphiques animés ont été réalisés, montrant l’évolution des ventes et de la valeur marchande par pays et par industries entre 2008 et 2023. L’utilisation d’une échelle logarithmique permet de mieux visualiser les écarts importants entre les valeurs, tandis que l’animation illustre les changements sectoriels au fil des années.
+
+<br>
+
+**Figure 13 - Analyse croisée Pays x Industrie des ventes de 2008 à 2023**
+
+```{r figure 13, fig.height=5, fig.width=12, echo=FALSE}
+cross_data <- data_all %>%
+  group_by(Year, Country_clean, Industry_clean) %>%
+  summarise(total_sales = sum(Sales, na.rm = TRUE), .groups = "drop")
+
+top_countries <- cross_data %>%
+  group_by(Country_clean) %>%
+  summarise(total = sum(total_sales), .groups = "drop") %>%
+  slice_max(total, n = 10)
+
+cross_filtered <- cross_data %>%
+  filter(Country_clean %in% top_countries$Country_clean)
+
+country_order <- cross_filtered %>%
+  group_by(Country_clean) %>%
+  summarise(total = sum(total_sales)) %>%
+  arrange(total) %>%
+  pull(Country_clean)
+
+cross_filtered <- cross_filtered %>%
+  mutate(
+    Country_clean = factor(Country_clean, levels = country_order),
+    Industry_short = ifelse(str_length(Industry_clean) > 30,
+                            paste0(str_sub(Industry_clean, 1, 30), "..."),
+                            Industry_clean),
+    total_sales_log = log10(pmax(total_sales, 1)),
+    Year = as.character(Year)
+  )
+years <- sort(unique(cross_filtered$Year))
+
+p13 <- plot_ly(data = cross_filtered,
+               x = ~Industry_short,
+               y = ~Country_clean,
+               frame = ~Year,
+               type = "scatter",
+               mode = "markers",
+               marker = list(
+                   symbol = "square",
+                   size = 18,  
+                   color = ~total_sales_log,
+                   colorscale = "Viridis",
+                   cmin = min(cross_filtered$total_sales_log),
+                   cmax = max(cross_filtered$total_sales_log),
+                   showscale = TRUE,
+                   line = list(width = 0),
+                   colorbar = list(
+                       title = "<b>Ventes (log10)</b>",
+                       titleside = "top",
+                       len = 0.8
+                       )
+                   ),
+               text = ~paste(
+                   "Pays :", Country_clean,
+                   "<br>Industrie :", Industry_clean,
+                   "<br>Ventes :", comma(total_sales, big.mark = " ")
+                   ),
+               hoverinfo = "text"
+               )
+
+p13 <- p13 %>%
+  layout(showlegend = FALSE,
+         xaxis = list(
+             title = "<b>Industrie</b>",
+             type = "category",
+             showgrid = TRUE,
+             tickangle = -45,
+             automargin = TRUE
+             ),
+         yaxis = list(
+             title = "<b>Pays</b>",
+             showgrid = TRUE,
+             automargin = TRUE
+             ),
+         height = 450,
+         width = 900,
+         margin = list(t = 40, b = 40, l = 150, r = 50),
+         plot_bgcolor = "white"
+         ) %>%
+    animation_opts(
+        frame = 1200,
+        transition = 600,
+        easing = "cubic-in-out"
+        ) %>%
+    animation_slider(y = -0.5) %>%
+    animation_button(y = -0.5)
+
+p13
+```
+
+**Figure 14 - Analyse croisée Pays x Industrie de la valeur marchande de 2008 à 2023**
+
+```{r figure 14, fig.height=5, fig.width=12, echo=FALSE}
+cross_data <- data_all %>%
+  group_by(Year, Country_clean, Industry_clean) %>%
+  summarise(total_mValue = sum(Market_Value, na.rm = TRUE), .groups = "drop")
+
+top_countries <- cross_data %>%
+  group_by(Country_clean) %>%
+  summarise(total = sum(total_mValue), .groups = "drop") %>%
+  slice_max(total, n = 10)
+
+cross_filtered <- cross_data %>%
+  filter(Country_clean %in% top_countries$Country_clean)
+
+country_order <- cross_filtered %>%
+  group_by(Country_clean) %>%
+  summarise(total = sum(total_mValue)) %>%
+  arrange(total) %>%
+  pull(Country_clean)
+
+cross_filtered <- cross_filtered %>%
+  mutate(
+    Country_clean = factor(Country_clean, levels = country_order),
+    Industry_short = ifelse(str_length(Industry_clean) > 30,
+                            paste0(str_sub(Industry_clean, 1, 30), "..."),
+                            Industry_clean),
+    total_mValue_log = log10(pmax(total_mValue, 1)),
+    Year = as.character(Year)
+  )
+
+years <- sort(unique(cross_filtered$Year))
+
+p14 <- plot_ly(data = cross_filtered,
+               x = ~Industry_short,
+               y = ~Country_clean,
+               frame = ~Year,
+               type = "scatter",
+               mode = "markers",
+               marker = list(
+                   symbol = "square",
+                   size = 18,  
+                   color = ~total_mValue_log,
+                   colorscale = "Viridis",
+                   cmin = min(cross_filtered$total_mValue_log),
+                   cmax = max(cross_filtered$total_mValue_log),
+                   showscale = TRUE,
+                   line = list(width = 0),
+                   colorbar = list(
+                       title = "<b>Valeur marchande<br>(log10)</b>",
+                       titleside = "top",
+                       len = 0.8
+                       )
+                   ),
+               text = ~paste(
+                   "Pays :", Country_clean,
+                   "<br>Industrie :", Industry_clean,
+                   "<br>Valeur marchande :", comma(total_mValue, big.mark = " ")
+                   ),
+               hoverinfo = "text"
+               )
+
+p14 <- p14 %>%
+  layout(showlegend = FALSE,
+         xaxis = list(
+             title = "<b>Industrie</b>",
+             type = "category",
+             showgrid = TRUE,
+             tickangle = -45,
+             automargin = TRUE
+             ),
+         yaxis = list(
+             title = "<b>Pays</b>",
+             showgrid = TRUE,
+             automargin = TRUE
+             ),
+         height = 450,
+         width = 900,
+         margin = list(t = 40, b = 40, l = 150, r = 50),
+         plot_bgcolor = "white"
+         ) %>%
+    animation_opts(
+        frame = 1200,
+        transition = 600,
+        easing = "cubic-in-out"
+        ) %>%
+    animation_slider(y = -0.5) %>%
+    animation_button(y = -0.5)
+
+p14
+```
+
+L’analyse croisée des ventes et de la valeur marchande met en évidence une spécialisation sectorielle de certains pays. 
+
+Au niveau des ventes, nous pouvons constater que les États-Unis dominent principalement les industries de la vente au détail et industrielle, tandis que la Chine se distingue dans les industries bancaire et industrielle. Au niveau de la valeur marchande, nous pouvons constater que les États-Unis dominent l'industrie technologique.
+
+D’autres pays présentent une spécialisation plus marquée dans certaines industries. Par exemple, le Japon et l’Allemagne montrent une spécialisation dans les industries manufacturières selon les ventes totales. Cette répartition illustre les différences structurelles entre les économies nationales.
+
+Cette analyse démontre que chaque pays tend à concentrer ses sociétés dans certaines industries, influençant la dynamique des performances financières.
+
+<br>
+
+## Interprétation des données et validation des hypothèses
+
+Les résultats d'analyse obtenus sont examinés afin de confirmer ou d’infirmer les [hypothèses](#hypothèses) formulées au début du projet, et permettent de discuter des principales tendances économiques mondiales observées.
+
+<br>
+
+**Hypothèse 1**
+
+L'hypothèse 1 est :
+
+>Les États-Unis et la Chine regroupent une part importante des plus grandes sociétés publiques mondiales, en raison de leur produit intérieur brut (PIB) élevé (The World Bank, s.d.).
+
+En 2023, les États-Unis sont au premier rang avec un PIB de 27,292,171 millions USD alors que la Chine arrive au deuxième rang avec un PIB de 18,270,356 millions USD, le troisième rang étant occupé par l'Allemagne avec un PIB nettement inférieur de 4,562,207 millions USD (The World Bank, s.d.). 
+
+Les résultats montrent que les États-Unis et la Chine regroupent une proportion importante des sociétés publiques. La visualisation des données de fréquence des sociétés dans chaque pays montre que les États-Unis occupe le premier rang de 2008 à 2023, ayant `r sum(data_all$Country_clean == "United States" & data_all$Year == 2023)` sociétés publiques en 2023. La Chine occupe le deuxième rang à partir de 2018, ayant `r sum(data_all$Country_clean == "China" & data_all$Year == 2023)` sociétés publiques en 2023.
+
+Les États-Unis dominent la majorité des indicateurs financiers, tandis que la Chine affiche une progression importante, notamment en termes d’actifs. 
+
+L’hypothèse est soutenue.
+
+<br>
+
+**Hypothèse 2**
+
+L'hypothèse 2 est :
+
+>Certaines industries, telles que le secteur de la technologie et de la finance, ont connu une progression plus marquée depuis 2008 comparativement à d’autres industries.
+
+Les données indiquent une croissance plus marquée de l'industrie technologique. L'industrie technologique a connu une forte croissance entre 2008 et 2023, tant au niveau des ventes qu'au niveau de la valeur marchande des sociétés. Il est intéressant de noter que bien que l'industrie de la technologie ait le plus progressé, cette industrie ne se place pas dans le top 10 du nombre moyen de sociétés publiques par industrie. Ceci montre que la progression est plus certainement due par la progression des mêmes sociétés et non à l'ajout de nouvelles sociétés dans cette industrie au fil des années.
+
+L'industrie de la finance ne se trouve pas dans le top 10 des industries ayant le plus progressées entre 2008 et 2023. Ceci montre que, bien que cette industrie se trouve dans le top 10 des industries relativement aux ventes totales et à la valeur marchande, la progression de l'industrie de la finance est plus constante que d'autres industries.
+
+L'hypothèse est soutenue en partie, relativement à la progression de l'industrie technologique.
+
+<br>
+
+**Hypothèse 3**
+
+L'hypothèse 3 est :
+
+>Les valeurs des indicateurs financiers varient significativement selon le pays et l’industrie, suggérant l’existence de spécialisation industrielle dans certains pays.
+
+Les résultats des [analyses croisées Pays x Industrie](#analyse_croisée) au niveau de la variable des ventes et de la variable de la valeur marchande démontrent que certains pays sont spécialisés dans certaines industries.
+
+L'analyse croisée des ventes montre que les États-Unis se spécialisent dans les industries de la vente au détail et de la construction et énergie. L'analyse croisée de la valeur marchande montre que les États-Unis se spécialisent dans l'industrie technologique. Nous pouvons également constater que certains pays ont des industries diversifiées, sans spécialisation précise.
+
+L’hypothèse est soutenue.
+
+<br>
+
+## Livrables
+
+Ce projet produit les livrables suivants :
+
++ Dépôt du produit final dans GitHub 
+    + Répertoire GitHub: https://github.com/mellanyh250/SCI1402
++ Tableau de bord déposé dans l’outil de dépôt des travaux notés
+    +  Extraction des données du projet dans un fichier `Forbes_Global_2000_output.csv` pour créer le tableau de bord
+    ```{r write csv, echo=FALSE}
+    fichier <- "Forbes_Global_2000_output.csv"
+
+    if (!file.exists(fichier)) {
+       write.csv(data_all, fichier, row.names = FALSE)
+    }
+    ```
++ Rapport final déposé dans l’outil de dépôt des travaux notés
+
+<br>
+
+## Annexes
+
+### Annexe A {#annexeA .unnumbered}
+
+Variable `Profits`
+
+**Figure 15 - Évolution de la médiane et de la moyenne des ventes entre 2008 et 2023**
+
+```{r figure 15, fig.height=3, out.width="90%", echo=FALSE}
+summary_profits <- data_all %>%
+  group_by(Year) %>%
+  summarise(
+      median_profits = median(Profits, na.rm = TRUE),
+      mean_profits = mean(Profits, na.rm = TRUE)
+      )
+
+p15 <- ggplot(summary_profits, aes(x = Year)) +
+    
+  geom_line(aes(y = median_profits, color = "Médiane"), linewidth = 1.2) +
+  geom_point(aes(y = median_profits, color = "Médiane"), size = 2) +
+  geom_line(aes(y = mean_profits, color = "Moyenne"), linewidth = 1.2, linetype = "dashed") +
+  geom_point(aes(y = mean_profits, color = "Moyenne"), size = 2) +
+  scale_color_manual(
+        values = c("Médiane" = "#1F4E79",
+                   "Moyenne" = "#00C5C0")
+        ) +
+    scale_y_continuous(labels = scales::label_number(big.mark = " ")) +
+    labs(
+        x = "Année",
+        y = "Profits totaux (en millions USD)",
+        color = ""
+        ) +
+    theme_univ +
+    theme(axis.line.x = element_line(color = "black"),
+          axis.line.y = element_line(color = "black")
+          )
+
+p15
+```
+
+<br>
+
+Variable `Assets`
+
+**Figure 16 - Évolution de la médiane et de la moyenne des actifs entre 2008 et 2023**
+
+```{r figure 16, fig.height=3, out.width="90%", echo=FALSE}
+summary_assets <- data_all %>%
+  group_by(Year) %>%
+  summarise(
+      median_assets = median(Assets, na.rm = TRUE),
+      mean_assets = mean(Assets, na.rm = TRUE)
+      )
+
+p16 <- ggplot(summary_assets, aes(x = Year)) +
+    
+  geom_line(aes(y = median_assets, color = "Médiane"), linewidth = 1.2) +
+  geom_point(aes(y = median_assets, color = "Médiane"), size = 2) +
+    
+  geom_line(aes(y = mean_assets, color = "Moyenne"), linewidth = 1.2, linetype = "dashed") +
+  geom_point(aes(y = mean_assets, color = "Moyenne"), size = 2) +
+    
+  scale_color_manual(
+        values = c("Médiane" = "#1F4E79",
+                   "Moyenne" = "#00C5C0")
+    ) +
+    scale_y_continuous(labels = scales::label_number(big.mark = " ")) +
+    labs(
+        x = "Année",
+        y = "Actifs totaux (en millions USD)",
+        color = ""
+        ) +
+    theme_univ +
+    theme(axis.line.x = element_line(color = "black"),
+          axis.line.y = element_line(color = "black")
+          )
+p16
+```
+
+<br>
+
+### Annexe B {#annexeB .unnumbered}
+
+##### Variable `Profits` {.unnumbered .tabset}
+
+###### **Croissance des profits** {.unnumbered}
+
+**Figure 17 - Taux de croissance des profits par industrie entre 2008 et 2023**
+
+```{r figure 17, fig.height=3.5, out.width="100%", echo=FALSE}
+croissance_profits_industrie <- data_all %>%
+    group_by(Industry_clean, Year) %>%
+    summarise(total_profits = sum(Profits, na.rm = TRUE), .groups = "drop") %>%
+    group_by(Industry_clean) %>%
+    filter(all(c(2008,2023) %in% Year)) %>%
+    summarise(
+        debut = total_profits[Year == 2008],
+        fin = total_profits[Year == 2023],
+        croissance_pct = (fin - debut) / debut * 100
+    ) %>%
+    slice_max(order_by = croissance_pct, n = 10, with_ties = FALSE) %>%
+    arrange(desc(croissance_pct)) %>%
+    ungroup()
+
+p17 <- ggplot(croissance_profits_industrie,
+             aes(x = fct_reorder(str_wrap(Industry_clean, width = 30), croissance_pct),
+                 y = croissance_pct,
+                 fill = Industry_clean)) + 
+    geom_col() +
+    coord_flip() +
+    scale_fill_viridis_d(option = "viridis") +
+    scale_y_continuous(labels = scales::label_number(big.mark = " ")) +
+    labs(
+        x = "Industrie",
+        y = "Taux de croissance (%)"
+        ) + 
+    theme_univ +
+    theme(axis.text.y = element_text(hjust = 0),
+          legend.position = "none")
+
+p17
+```
+
+###### **Évolution temporelle des profits** {.unnumbered}
+
+**Figure 18 - Évolution des profits des 10 industries entre 2008 et 2023**
+
+```{r figure 18, fig.height=5, out.width="90%", echo=FALSE}
+croissance_profits_industrie <- data_all %>%
+    group_by(Industry_clean, Year) %>%
+    summarise(Profits = sum(Profits, na.rm = TRUE), .groups = "drop") %>%
+    group_by(Industry_clean) %>%
+    summarise(
+        debut = Profits[Year == min(Year)],
+        fin = Profits[Year == max(Year)],
+        croissance_pct = (fin - debut) / debut * 100
+    ) %>%
+    slice_max(order_by = croissance_pct, n = 10, with_ties = FALSE) %>%
+    arrange(desc(croissance_pct)) %>%
+    ungroup()
+
+top10_industries_profits <- croissance_profits_industrie$Industry_clean
+
+data_plot <- data_all %>%
+  filter(Industry_clean %in% top10_industries_profits) %>%
+  group_by(Industry_clean, Year) %>%
+  summarise(Profits = sum(Profits, na.rm = TRUE), .groups = "drop")
+
+data_plot$Industry_wrap <- str_wrap(data_plot$Industry_clean, width = 20)
+
+p18 <- plot_ly(data = data_plot,
+               x = ~Year,
+               y = ~Profits,
+               color = ~Industry_wrap,
+               colors = viridis(10, option = "viridis"),
+               type = "scatter",
+               mode = "lines+markers",
+               text = ~paste(
+                   "Industrie :", Industry_clean,
+                   "<br>Année :", Year,
+                   "<br>Profits totaux :",
+                   scales::comma(Profits, big.mark = " ")
+                   ),
+               hoverinfo = "text"
+               ) %>% 
+    layout(
+        xaxis = list(title = "<b>Année</b>",
+                     showgrid = FALSE,
+                     showline = TRUE),
+        yaxis = list(title = "<b>Profits totaux (en millions USD)</b>",
+                     showgrid = FALSE,
+                     showline = TRUE),
+        legend = list(title = list(text = "<b>Industries</b>")),
+        width = 900,
+        height = 500
+        ) 
+p18
+```
+
+<br>
+
+##### Variable `Actifs` {.unnumbered .tabset}
+
+###### **Croissance des actifs** {.unnumbered}
+
+**Figure 19 - Taux de croissance des actifs par industrie entre 2008 et 2023**
+
+```{r figure 19, fig.height=3.5, out.width="100%", echo=FALSE}
+croissance_actifs_industrie <- data_all %>%
+    group_by(Industry_clean, Year) %>%
+    summarise(Assets = sum(Assets, na.rm = TRUE), .groups = "drop") %>%
+    group_by(Industry_clean) %>%
+    filter(all(c(2008, 2023) %in% Year)) %>%
+    summarise(
+        debut = Assets[Year == 2008],
+        fin = Assets[Year == 2023],
+        croissance_pct = (fin - debut) / debut * 100
+    ) %>%
+    slice_max(order_by = croissance_pct, n = 10, with_ties = FALSE) %>%
+    arrange(desc(croissance_pct)) %>%
+    ungroup()
+
+p19 <- ggplot(croissance_actifs_industrie,
+             aes(x = fct_reorder(str_wrap(Industry_clean, width = 30), croissance_pct),
+                 y = croissance_pct,
+                 fill = Industry_clean)) +
+    geom_col() +
+    coord_flip() +
+    scale_fill_viridis_d(option = "viridis") +
+    scale_y_continuous(labels = scales::label_number(big.mark = " ")) +
+    labs(
+        x = "Industrie",
+        y = "Taux de croissance (%)"
+        ) +
+    theme_univ +
+    theme(axis.text.y = element_text(hjust = 0),
+          legend.position = "none")
+
+p19
+```
+
+###### **Évolution temporelle des actifs** {.unnumbered}
+
+**Figure 20 - Évolution des actifs des 10 industries entre 2008 et 2023**
+
+```{r figure 20, fig.height=5, out.width="90%", echo=FALSE}
+croissance_actifs_industrie <- data_all %>%
+    group_by(Industry_clean, Year) %>%
+    summarise(Actifs = sum(Assets, na.rm = TRUE), .groups = "drop") %>%
+    group_by(Industry_clean) %>%
+    summarise(
+        debut = Actifs[Year == min(Year)],
+        fin = Actifs[Year == max(Year)],
+        croissance_pct = (fin - debut) / debut * 100
+    ) %>%
+    slice_max(order_by = croissance_pct, n = 10, with_ties = FALSE) %>%
+    arrange(desc(croissance_pct)) %>%
+    ungroup()
+
+top10_industries_actifs <- croissance_actifs_industrie$Industry_clean
+
+data_plot <- data_all %>%
+  filter(Industry_clean %in% top10_industries_actifs) %>%
+  group_by(Industry_clean, Year) %>%
+  summarise(Actifs = sum(Assets, na.rm = TRUE), .groups = "drop")
+
+data_plot$Industry_wrap <- str_wrap(data_plot$Industry_clean, width = 20)
+
+p20 <- plot_ly(data = data_plot,
+               x = ~Year,
+               y = ~Actifs,
+               color = ~Industry_wrap,
+               colors = viridis(10, option = "viridis"),
+               type = "scatter",
+               mode = "lines+markers",
+               text = ~paste(
+                   "Industrie :", Industry_clean,
+                   "<br>Année :", Year,
+                   "<br>Actifs totaux :",
+                   scales::comma(Actifs, big.mark = " ")
+                   ),
+               hoverinfo = "text"
+               ) %>% 
+    layout(
+        xaxis = list(title = "<b>Année</b>",
+                     showgrid = FALSE,
+                     showline = TRUE),
+        yaxis = list(title = "<b>Actifs totaux (en millions USD)</b>",
+                     showgrid = FALSE,
+                     showline = TRUE),
+        legend = list(title = list(text = "<b>Industries</b>")),
+        width = 900,
+        height = 500
+        ) 
+
+p20
+```
+
+<br>
+
+### Annexe C {#annexeC .unnumbered}
+
+Variable `Profits`
+
+**Figure 21 - Pays ayant les profits totaux les plus élevés de 2008 à 2023**
+
+```{r figure 21, fig.height=3, out.width="100%", echo=FALSE}
+top10_ctry <- data_all %>%
+    group_by(Year, Country_clean) %>%
+    summarise(total_profits = sum(Profits, na.rm = TRUE), .groups = "drop") %>%
+    group_by(Year) %>%
+    slice_max(total_profits, n = 10) %>%
+    arrange(Year, desc(total_profits)) %>%
+    ungroup()
+
+p21 <- ggplot(top10_ctry,
+             aes(x = fct_reorder(Country_clean, total_profits),
+                 y = total_profits,
+                 fill = Country_clean)) +
+    geom_col() +
+    coord_flip() +
+    scale_fill_viridis_d(option = "viridis") +
+    scale_y_continuous(labels = scales::label_number(big.mark = " ")) +
+    labs(
+        title = "Profits totaux en {closest_state}",
+        x = "Pays",
+        y = "Profits totaux (en millions USD)"
+        ) +
+    theme_univ +
+    theme(axis.text.y = element_text(hjust = 0),
+          legend.position = "none")
+
+anim <- p21 +
+    transition_states(Year, transition_length = 4, state_length = 2) +
+    ease_aes("cubic-in-out")
+
+animate(anim, nframes = 200, fps = 10)
+```
+
+<br>
+
+Variable `Assets`
+
+**Figure 22 - Pays ayant les actifs totaux les plus élevés de 2008 à 2023**
+
+```{r figure 22, fig.height=3, out.width="100%", echo=FALSE}
+top10_ctry <- data_all %>%
+    group_by(Year, Country_clean) %>%
+    summarise(total_assets = sum(Assets, na.rm = TRUE), .groups = "drop") %>%
+    group_by(Year) %>%
+    slice_max(total_assets, n = 10) %>%
+    arrange(Year, desc(total_assets)) %>%
+    ungroup()
+
+p22 <- ggplot(top10_ctry,
+             aes(x = fct_reorder(Country_clean, total_assets),
+                 y = total_assets,
+                 fill = Country_clean)) +
+    geom_col() +
+    coord_flip() +
+    scale_fill_viridis_d(option = "viridis") +
+    scale_y_continuous(labels = scales::label_number(big.mark = " ")) +
+    labs(
+        title = "Actifs totaux en {closest_state}",
+        x = "Pays",
+        y = "Actifs totaux (en millions USD)"
+        ) +
+    theme_univ +
+    theme(axis.text.y = element_text(hjust = 0),
+          legend.position = "none")
+
+anim <- p22 +
+  transition_states(Year, transition_length = 4, state_length = 2) +
+  ease_aes("cubic-in-out")
+
+animate(anim, nframes = 200, fps = 10)
+```
+
+<br>
+
+Variable `Market_Value`
+
+**Figure 23 - Pays ayant la valeur marchande la plus élevée de 2008 à 2023**
+
+```{r figure 23, fig.height=3, out.width="100%", echo=FALSE}
+top10_ctry <- data_all %>%
+    group_by(Year, Country_clean) %>%
+    summarise(total_mValue = sum(Market_Value, na.rm = TRUE), .groups = "drop") %>%
+    group_by(Year) %>%
+    slice_max(total_mValue, n = 10) %>%
+    arrange(Year, desc(total_mValue)) %>%
+    ungroup()
+
+p23 <- ggplot(top10_ctry,
+             aes(x = fct_reorder(Country_clean, total_mValue),
+                 y = total_mValue,
+                 fill = Country_clean)) +
+    geom_col() +
+    coord_flip() +
+    scale_fill_viridis_d(option = "viridis") +
+    scale_y_continuous(labels = scales::label_number(big.mark = " ")) +
+    labs(
+        title = "Valeur marchande en {closest_state}",
+        x = "Pays",
+        y = "Valeur marchande (en millions USD)"
+        ) +
+    theme_univ +
+    theme(axis.text.y = element_text(hjust = 0),
+          legend.position = "none")
+
+anim <- p23 +
+  transition_states(Year, transition_length = 4, state_length = 2) +
+  ease_aes("cubic-in-out")
+
+animate(anim, nframes = 200, fps = 10)
+```
+
+### Annexe D {#annexeD .unnumbered}
+
+##### Variable `Profits` {.tabset .unnumbered}
+
+###### **Croissance des profits** {.unnumbered}
+
+**Figure 24 - Taux de croissance des profits par pays entre 2008 et 2023**
+
+```{r figure 24, fig.height = 3.5, out.width="90%", echo=FALSE}
+croissance_profits_pays <- data_all %>%
+    group_by(Country_clean, Year) %>%
+    summarise(Profits = sum(Profits, na.rm = TRUE), .groups = "drop") %>%
+    group_by(Country_clean) %>%
+    filter(all(c(2008, 2023) %in% Year)) %>%
+    summarise(
+        debut = Profits[Year == 2008],
+        fin = Profits[Year == 2023],
+        croissance_pct = (fin - debut) / debut * 100
+    ) %>%
+    slice_max(order_by = croissance_pct, n = 10, with_ties = FALSE) %>%
+    arrange(desc(croissance_pct)) %>%
+    ungroup()
+
+p24 <- ggplot(croissance_profits_pays,
+            aes(x = fct_reorder(Country_clean, croissance_pct),
+                y = croissance_pct,
+                fill = Country_clean)) +
+    geom_col() +
+    coord_flip() +
+    scale_fill_viridis_d(option = "viridis") +
+    scale_y_continuous(labels = scales::label_number(big.mark = " ")) +
+    labs(
+        x = "Pays",
+        y = "Taux de croissance (%)"
+    ) +
+    theme_univ +
+    theme(axis.text.y = element_text(hjust = 0),
+          legend.position = "none")
+
+p24
+```
+
+###### **Évolution temporelle des profits** {.unnumbered}
+
+**Figure 25 - Évolution des profits des 10 pays entre 2008 et 2023**
+
+```{r figure 25, fig.height=3.5, out.width="90%", echo=FALSE}
+top10_pays_profits <- croissance_profits_pays$Country_clean
+
+data_plot <- data_all %>%
+  filter(Country_clean %in% top10_pays_profits) %>%
+  group_by(Country_clean, Year) %>%
+  summarise(Profits = sum(Profits, na.rm = TRUE), .groups = "drop")
+
+p25 <- plot_ly(data = data_plot,
+               x = ~Year,
+               y = ~Profits,
+               color = ~Country_clean,
+               colors = viridis(10, option = "viridis"),
+               type = "scatter",
+               mode = "lines+markers",
+               text = ~paste(
+                   "Pays :", Country_clean,
+                   "<br>Année :", Year,
+                   "<br>Profits totaux :",
+                   scales::comma(Profits, big.mark = " ")
+                   ),
+               hoverinfo = "text"
+               ) %>% 
+    layout(
+        xaxis = list(title = "<b>Année</b>",
+                     showgrid = FALSE,
+                     showline = TRUE),
+        yaxis = list(title = "<b>Profits totaux (en millions USD)</b>",
+                     showgrid = FALSE,
+                     showline = TRUE),
+        legend = list(title = list(text = "<b>Pays</b>")),
+        width = 900,
+        height = 400
+        ) 
+
+p25
+```
+
+<br>
+
+##### Variable `Assets` {.tabset .unnumbered}
+
+###### **Croissance des actifs** {.unnumbered}
+
+**Figure 26 - Taux de croissance des actifs par pays entre 2008 et 2023**
+
+```{r figure 26, fig.height = 3.5, out.width="90%", echo=FALSE}
+croissance_assets_pays <- data_all %>%
+    group_by(Country_clean, Year) %>%
+    summarise(Assets = sum(Assets, na.rm = TRUE), .groups = "drop") %>%
+    group_by(Country_clean) %>%
+    filter(all(c(2008, 2023) %in% Year)) %>%
+    summarise(
+        debut = Assets[Year == 2008],
+        fin = Assets[Year == 2023],
+        croissance_pct = (fin - debut) / debut * 100
+    ) %>%
+    slice_max(order_by = croissance_pct, n = 10, with_ties = FALSE) %>%
+    arrange(desc(croissance_pct)) %>%
+    ungroup()
+
+p26 <- ggplot(croissance_assets_pays,
+            aes(x = fct_reorder(Country_clean, croissance_pct),
+                y = croissance_pct,
+                fill = Country_clean)) +
+    geom_col() +
+    coord_flip() +
+    scale_fill_viridis_d(option = "viridis") +
+    scale_y_continuous(labels = scales::label_number(big.mark = " ")) +
+    labs(
+        x = "Pays",
+        y = "Taux de croissance (%)"
+    ) +
+    theme_univ +
+    theme(axis.text.y = element_text(hjust = 0),
+          legend.position = "none")
+
+p26
+```
+
+###### **Évolution temporelle des actifs** {.unnumbered}
+
+**Figure 27 - Évolution des actifs des 10 pays entre 2008 et 2023**
+
+```{r figure 27, fig.height=3.5, out.width="90%", echo=FALSE}
+top10_pays_assets <- croissance_assets_pays$Country_clean
+
+data_plot <- data_all %>%
+  filter(Country_clean %in% top10_pays_assets) %>%
+  group_by(Country_clean, Year) %>%
+  summarise(Assets = sum(Assets, na.rm = TRUE), .groups = "drop")
+
+p27 <- plot_ly(data = data_plot,
+               x = ~Year,
+               y = ~Assets,
+               color = ~Country_clean,
+               colors = viridis(10, option = "viridis"),
+               type = "scatter",
+               mode = "lines+markers",
+               text = ~paste(
+                   "Pays :", Country_clean,
+                   "<br>Année :", Year,
+                   "<br>Actifs totaux :",
+                   scales::comma(Assets, big.mark = " ")
+                   ),
+               hoverinfo = "text"
+               ) %>% 
+    layout(
+        xaxis = list(title = "<b>Année</b>",
+                     showgrid = FALSE,
+                     showline = TRUE),
+        yaxis = list(title = "<b>Actifs totaux (en millions USD)</b>",
+                     showgrid = FALSE,
+                     showline = TRUE),
+        legend = list(title = list(text = "<b>Pays</b>")),
+        width = 900,
+        height = 400
+        ) 
+
+p27
+```
+
+## Références
+
+Ritika01mp. (2023). *Forbes Global 2000 2008–2023 (mil. unit)* [jeu de données]. Kaggle. https://www.kaggle.com/datasets/ritika01mp/forbes-global-2000-2008-2023-mil-unit
+
+The World Bank. (s.d.). *GDP (current US$)*. World Bank Data. Récupéré le 15 janvier 2026 de https://data.worldbank.org/indicator/NY.GDP.MKTP.CD?most_recent_value_desc=true
